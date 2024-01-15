@@ -27,11 +27,19 @@ enum cpsr_mode
 
 enum cpsr_bit_pos
 {
-    THUMB_POS = 5,
+    MODE_POS,
+    THUMB_POS = MODE_POS + 5,
     FIQ_POS,
     IRQ_POS,
-
-    V_POS,
+    ABORT_POS,
+    ENDIAN_POS,
+    IT_POS,
+    GE_POS = IT_POS + 6,
+    JAZZELE_POS = GE_POS + 4,
+    THUMBV2_IT_POS = 25,
+    Q_POS = THUMBV2_IT_POS + 2,
+    STATUS_POS,
+    V_POS = STATUS_POS,
     C_POS,
     Z_POS,
     N_POS,
@@ -40,17 +48,17 @@ enum cpsr_bit_pos
 enum cspr_masks
 {
     MODE_MASK = 0b11111,
-    THUMB_MASK = 0b1 << 4,
-    FIQ_MASK = 0b1 << 5,
-    IRQ_MASK = 0b1 << 6,
-    ABORT_MASK = 0b1 << 7,
-    ENDIAN_MASK = 0b1 << 8,
-    IT_MASK = 0b111111 << 9,
-    GE_MASK = 0b1111 << 15,
-    JAZZELE_MASK = 0b1 << 23,
-    THUMBV2_IT_MASK = 0b11 << 24,
-    SATURATION_MASK = 0b1 << 26,
-    STATUS_MASK = 0b1111 << 27
+    THUMB_MASK = 0b1 << THUMB_POS,
+    FIQ_MASK = 0b1 << FIQ_POS,
+    IRQ_MASK = 0b1 << IRQ_POS,
+    ABORT_MASK = 0b1 << ABORT_POS,
+    ENDIAN_MASK = 0b1 << ENDIAN_POS,
+    IT_MASK = 0b111111 << IT_POS,
+    GE_MASK = 0b1111 << GE_POS,
+    JAZZELE_MASK = 0b1 << JAZZELE_POS,
+    THUMBV2_IT_MASK = 0b11 << THUMBV2_IT_POS,
+    SATURATION_MASK = 0b1 << Q_POS,
+    STATUS_MASK = 0b1111 << STATUS_POS,
 };
 
 enum cpsr_alu_flag

@@ -1,18 +1,20 @@
 #include "include/main.h"
+#include "include/testing.h"
 
 const int screen_width = 240;
 const int screen_height = 160;
 
 int main(int argc, char *argv[])
 {
-    SDL_Window *window = NULL;
+    /*SDL_Window *window = NULL;
     SDL_Renderer *renderer = NULL;
     SDL_Event e;
     bool run = true;
-    init(&window, &renderer);
+    init(&window, &renderer);*/
     struct cpu cpu;
     cpu_init(&cpu);
-    while (run)
+    test_cpu();
+    /*while (run)
     {
         while (SDL_PollEvent(&e) != 0)
         {
@@ -22,12 +24,11 @@ int main(int argc, char *argv[])
                 run = false;
                 break;
             }
-            SDL_RenderPresent(renderer);
             draw_display(renderer, &cpu);
             SDL_RenderPresent(renderer);
         }
-    }
-    terminate(window, renderer);
+    }*/
+    // terminate(window, renderer);
     return no_error;
 }
 
@@ -79,5 +80,16 @@ void draw_display(SDL_Renderer *renderer, struct cpu *cpu)
             SDL_RenderDrawPoint(renderer, i % SCREEN_WIDTH, i / SCREEN_WIDTH);
         }
         cpu->drawn = true;
+    }
+}
+
+void draw_rect(struct cpu *cpu, int left, int top, int width, int height, int color)
+{
+    for (int x = left; x < left + width; x++)
+    {
+        for (int y = top; y < top + height; y++)
+        {
+            cpu_save_word(cpu, VRAM_START + x + y * SCREEN_WIDTH, color);
+        }
     }
 }

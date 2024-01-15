@@ -43,6 +43,10 @@ void cpu_save_word(struct cpu *cpu, WORD address, WORD value)
     {
         cpu->memory[address + i] = value >> sizeof(BYTE) * i * __CHAR_BIT__;
     }
+    if (address >= VRAM_START && address < VRAM_START + VRAM_SIZE)
+    {
+        cpu->drawn = false;
+    }
 }
 
 HALFWORD cpu_load_halfword(struct cpu *cpu, HALFWORD address)
@@ -62,33 +66,33 @@ void cpu_save_halfword(struct cpu *cpu, WORD address, HALFWORD value)
     }
 }
 
-/*void cpu_change_mode(struct cpu *cpu, enum cpsr_mode mode)
-{
-    enum cpsr_mode current_mode = cpu->registers[cpsr] & MODE_MASK;
-    if (current_mode != MODE_USER)
-    {
-        cpu_change_mode(cpu, MODE_USER);
-    }
-    switch (mode)
-    {
-    case MODE_USER:
-    {
-        int reg_start = 0;
-        int reg_end = 0;
-        switch (current_mode)
-        {
-        case MODE_SVC:
-            reg_start = SVC_REG_START;
-            reg_end = SVC_REG_END;
-            break;
-        }
-        for (int i = 0; i < reg_end - reg_start; i++)
-        {
-            cpu->registers[USER_REG_END - i] =
-        }
-    }
-    }
-}*/
+void cpu_change_mode(struct cpu *cpu, enum cpsr_mode mode)
+{ /*
+     enum cpsr_mode current_mode = cpu->registers[cpsr] & MODE_MASK;
+     if (current_mode != MODE_USER)
+     {
+         cpu_change_mode(cpu, MODE_USER);
+     }
+     switch (mode)
+     {
+     case MODE_USER:
+     {
+         int reg_start = 0;
+         int reg_end = 0;
+         switch (current_mode)
+         {
+         case MODE_SVC:
+             reg_start = SVC_REG_START;
+             reg_end = SVC_REG_END;
+             break;
+         }
+         for (int i = 0; i < reg_end - reg_start; i++)
+         {
+             cpu->registers[USER_REG_END - i] =
+         }
+     }
+     }*/
+}
 
 void cpu_execute_arm_instruction(struct cpu *cpu, WORD instruction)
 {
@@ -167,7 +171,7 @@ void cpu_execute_thumb_instruction(struct cpu *cpu, HALFWORD instruction)
 
 void arm_branch_and_exchange(struct cpu *cpu, WORD instruction)
 {
-    if ((instruction & STATUS_MASK) != (cpu->registers[cpsr] & STATUS_MASK))
+    if (check_condition(cpu, instruction))
     {
         cpu->registers[pc] += sizeof(WORD);
         return;
@@ -177,14 +181,14 @@ void arm_branch_and_exchange(struct cpu *cpu, WORD instruction)
     switch (opcode >> 4)
     {
     case 0b0011:
-        cpu->registers[lr] = cpu->registers[pc] + (sizeof(WORD) * 2);
+        cpu->registers[lr] = cpu->registers[pc];
     case 0b0001:
         cpu->registers[pc] = cpu->registers[reg];
         cpu->registers[cpsr] |= THUMB_MASK;
         break;
     case 0b0010:
         cpu->registers[pc] = cpu->registers[reg];
-        cpu->registers[cpsr] &= JAZZELE_MASK;
+        cpu->registers[cpsr] |= JAZZELE_MASK;
         break;
     }
 }
@@ -216,6 +220,10 @@ void arm_software_interrupt(struct cpu *cpu, WORD instruction)
 
 void arm_branch(struct cpu *cpu, WORD instruction)
 {
+    if (check_condition(cpu, instruction))
+    {
+        cpu->registers[pc] += sizeof(WORD) / sizeof(BYTE);
+    }
     BYTE opcode = instruction >> 24 & 0b1;
     // getting rid of the top 8 bits
     int32_t offset = instruction << 8;
@@ -232,39 +240,111 @@ void arm_branch(struct cpu *cpu, WORD instruction)
     }
 }
 
+void arm_block_data_transfer(struct cpu *cpu, WORD instruction)
+{
+    enum opt
+    {
+        P = 0b10000,
+        U = 0b01000,
+        S = 0b00100,
+        W = 0b00010,
+        L = 0b00001,
+    };
+    if (check_condition(cpu, instruction))
+    {
+        cpu->registers[pc] += sizeof(WORD);
+        return;
+    }
+    BYTE opt = instruction >> 20 & 0b11111;
+    BYTE base_reg = instruction >> 16 & 0b1111;
+    WORD base = cpu->registers[base_reg];
+    int16_t reg_list = instruction & UINT16_MAX;
+    int reg_count = 0;
+    for (int i = 0, regs = reg_list; i < sizeof(reg_list) * __CHAR_BIT__; i++)
+    {
+        if ((regs & 0b1) == 0b1)
+        {
+            reg_count += 1;
+        }
+        regs >>= 1;
+    }
+    int offset = reg_count * sizeof(WORD);
+    base += offset;
+    if ((opt & S) == S)
+    {
+    }
+    if ((opt & L) == L)
+    {
+        // load
+        for (int i = 0, current_reg = 0, regs = reg_list; i < reg_count;)
+        {
+            WORD value = cpu_load_word(cpu, base - i * sizeof(WORD));
+            while ((regs & 0b1) != 0b1 && regs != 0)
+            {
+                regs >>= 1;
+                current_reg += 1;
+            }
+            cpu->registers[current_reg] = value;
+            i++;
+            regs >>= 1;
+            current_reg += 1;
+        }
+    }
+    else
+    {
+        // store
+        for (int i = 0, current_reg = 0, regs = reg_list; i < reg_count;)
+        {
+            while ((regs & 0b1) != 0b1 && regs != 0)
+            {
+                regs >>= 1;
+            }
+            WORD value = cpu->registers[current_reg];
+            cpu_save_word(cpu, base - i * sizeof(WORD), value);
+            i++;
+            current_reg += 1;
+            regs >>= 1;
+        }
+    }
+    if ((opt & W) == W)
+    {
+        cpu->registers[base_reg] = base;
+    }
+}
+
 bool check_condition(struct cpu *cpu, uint8_t cond)
 {
-    uint8_t state = cpu->registers[cpsr] & MODE_MASK;
+    uint8_t state = (cpu->registers[cpsr] >> STATUS_POS) & STATUS_MASK;
     switch (cond)
     {
     case EQ:
-        return state & FLAG_Z;
+        return (state & FLAG_Z) == FLAG_Z;
     case NE:
-        return !(state & FLAG_Z);
+        return (state & FLAG_Z) != FLAG_Z;
     case BEQ:
-        return state & FLAG_C;
+        return (state & FLAG_C) == FLAG_C;
     case LO:
-        return !(state & FLAG_C);
+        return (state & FLAG_C) != FLAG_C;
     case MI:
-        return state & FLAG_N;
+        return (state & FLAG_N) == FLAG_N;
     case PL:
-        return !(state & FLAG_N);
+        return (state & FLAG_N) != FLAG_N;
     case VS:
-        return state & FLAG_V;
+        return (state & FLAG_V) == FLAG_V;
     case VC:
-        return !(state & FLAG_V);
+        return (state & FLAG_V) != FLAG_V;
     case HI:
-        return state & (FLAG_C | FLAG_Z);
+        return (state & (FLAG_C | FLAG_Z)) == (FLAG_C | ~FLAG_Z);
     case LS:
-        return state & (FLAG_C | FLAG_Z);
+        return (state & (FLAG_C | FLAG_Z)) == (~FLAG_C | FLAG_Z);
     case GE:
-        return (state & FLAG_N) == (state & FLAG_V);
+        return ((state & FLAG_N) >> (N_POS - STATUS_POS)) == ((state & FLAG_V) >> (V_POS - STATUS_POS));
     case LT:
-        return (state & FLAG_N) != (state & FLAG_V);
+        return ((state & FLAG_N) >> (N_POS - STATUS_POS)) != ((state & FLAG_V) >> (V_POS - STATUS_POS));
     case GT:
-        return (state & FLAG_N) == (state & FLAG_V) && !(state & FLAG_Z);
+        return ((state & FLAG_N) >> (N_POS - STATUS_POS)) == ((state & FLAG_V) >> (V_POS - STATUS_POS)) && ((state & FLAG_Z) != FLAG_Z);
     case LE:
-        return (state & FLAG_N) != (state & FLAG_V) && (state & FLAG_Z);
+        return ((state & FLAG_N) >> (N_POS - STATUS_POS)) != ((state & FLAG_V) >> (V_POS - STATUS_POS)) || ((state & FLAG_Z) == FLAG_Z);
     case AL:
         return true;
     case NV:
