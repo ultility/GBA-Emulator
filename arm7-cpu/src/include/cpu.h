@@ -161,4 +161,8 @@ void arm_branch(struct cpu *cpu, WORD instruction);
 
 void arm_block_data_transfer(struct cpu *cpu, WORD instruction);
 
+void arm_single_data_transfer(struct cpu *cpu, WORD instruction);
+
+void arm_data_proccessing(struct cpu *cpu, WORD instruction);
+
 bool check_condition(struct cpu *cpu, uint8_t condition);

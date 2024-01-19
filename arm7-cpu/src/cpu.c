@@ -1,4 +1,5 @@
 #include "include/cpu.h"
+#include "cpu.h"
 
 void cpu_init(struct cpu *cpu)
 {
@@ -312,6 +313,226 @@ void arm_block_data_transfer(struct cpu *cpu, WORD instruction)
     }
 }
 
+void arm_single_data_transfer(struct cpu *cpu, WORD instruction)
+{
+    enum opt
+    {
+        I = 0b1 << 25,
+        B = 0b1 << 22,
+        W = 0b1 << 21,
+        L = 0b1 << 20,
+        RN = 0b1111 << 16,
+        RD = 0b1111 << 12,
+        IMM_OFFSET = 0b11111111111,
+        IS = 0b11111 << 7,
+        ST = 0b11 << 5,
+        RM = 0b1111,
+    };
+}
+void arm_data_proccessing(struct cpu *cpu, WORD instruction)
+{
+    if (!check_condition(cpu, (instruction & 0b1111) << 28))
+    {
+        cpu->registers[pc] += sizeof(WORD);
+        return;
+    }
+    enum opt
+    {
+        I = 0b1 << 25,
+        OP = 0b1111 << 21,
+        S = 0b1 << 20,
+        RN = 0b1111 << 16,
+        RD = 0b1111 << 12,
+        RIS = 0b11111 << 7,
+        RS = 0b1111 << 8,
+        ST = 0b11 << 5,
+        R = 0b1 << 4,
+        RM = 0b1111,
+        IIS = 0b1111 << 8,
+        NN = 0b11111111,
+    };
+    BYTE opcode = (instruction & OP) >> 21;
+    int Rd = (instruction & RD) >> 12;
+    int op1 = cpu->registers[(instruction & RN) >> 16];
+    int op2 = 0;
+    BYTE status = 0;
+    if ((instruction & I) == I)
+    {
+        op2 = instruction & NN;
+        for (int i = (instruction & IIS) >> 8; i > 0; i--)
+        {
+            BYTE rotated = op2 & 0b11;
+            op2 >>= 2;
+            op2 &= ~(11 << sizeof(op2) * __CHAR_BIT__ - 2);
+            op2 |= rotated << (sizeof(op2) * __CHAR_BIT__ - 2);
+        }
+    }
+    else
+    {
+        int shift_amount = 0;
+        if ((instruction & R) == R)
+        {
+            shift_amount = cpu->registers[(instruction & RS) >> 8];
+        }
+        else
+        {
+            shift_amount = (instruction & RIS) >> 7;
+        }
+        switch ((instruction & ST) >> 5)
+        {
+        case 0b00: // LSL
+            op2 <<= shift_amount;
+            for (int i = 0; i < shift_amount; i++)
+            {
+                if (op2 & (0b1 << (sizeof(op2) * __CHAR_BIT__ - i)) > 0)
+                {
+                    status |= C_POS >> STATUS_POS;
+                }
+            }
+            break;
+        case 0b01: // LSR
+            op2 >>= shift_amount;
+            for (int i = 0; i < shift_amount; i++)
+            {
+                op2 &= ~(1 << (sizeof(op2) * __CHAR_BIT__ - i - 1));
+            }
+            break;
+        case 0b10: // ASR
+            int sign_bit = op2 & (0b1 << 31);
+            op2 >>= shift_amount;
+            for (int i = 0; i < shift_amount; i++)
+            {
+                op2 &= ~(1 << (sizeof(op2) * __CHAR_BIT__ - i - 1));
+                op2 |= sign_bit >> i;
+            }
+            break;
+        case 0b11: // ROR
+            for (int i = 0; i < shift_amount; i++)
+            {
+                BYTE rotated = op2 & 0b1;
+                op2 >>= 1;
+                op2 &= ~(1 << (sizeof(op2) * __CHAR_BIT__ - 1));
+                op2 |= rotated << (sizeof(op2) * __CHAR_BIT__ - 1);
+            }
+            break;
+        }
+    }
+    switch (opcode)
+    {
+    case 0x0: // AND
+        cpu->registers[Rd] = op1 & op2;
+        break;
+    case 0x1: // EOR
+        cpu->registers[Rd] = op1 ^ op2;
+        break;
+    case 0x2: // SUB
+        cpu->registers[Rd] = op1 - op2;
+        if (op2 > 0 && op1 < INT32_MIN + op2)
+        {
+            status |= V_POS >> STATUS_POS;
+        }
+        break;
+    case 0x3: // RSB
+        cpu->registers[Rd] = op2 - op1;
+        if (op1 > 0 && op2 < INT32_MIN + op1)
+        {
+            status |= V_POS >> STATUS_POS;
+        }
+        break;
+    case 0x4: // ADD
+        cpu->registers[Rd] = op1 + op2;
+        if (op2 > 0 && op1 > INT32_MAX - op2)
+        {
+            status |= V_POS >> STATUS_POS;
+        }
+        break;
+    case 0x5: // ADC
+        cpu->registers[Rd] = op1 + op2 + ((cpu->registers[cpsr] >> C_POS) & 0b1);
+        if (op2 > 0 && op1 > INT32_MAX - 1 - op2)
+        {
+            status |= V_POS >> STATUS_POS;
+        }
+        break;
+    case 0x6: // SBC
+        cpu->registers[Rd] = op1 - op2 - 1 + ((cpu->registers[cpsr] >> C_POS) & 0b1);
+        if (op2 > 0 && op1 < INT32_MIN + op2 + 1 - ((cpu->registers[cpsr] >> C_POS) & 0b1))
+        {
+            status |= V_POS >> STATUS_POS;
+        }
+        break;
+    case 0x7: // RSC
+        cpu->registers[Rd] = op2 - op1 - 1 + ((cpu->registers[cpsr] >> C_POS) & 0b1);
+        if (op1 > 0 && op2 < INT32_MIN + op1 + 1 - ((cpu->registers[cpsr] >> C_POS) & 0b1))
+        {
+            status |= V_POS >> STATUS_POS;
+        }
+        break;
+    case 0x8: // TST
+        if ((op1 & op2) == 0)
+        {
+            status |= Z_POS >> STATUS_POS;
+        }
+        if ((op1 & op2) < 0)
+        {
+            status |= N_POS >> STATUS_POS;
+        }
+        break;
+    case 0x9: // TEQ
+        if ((op1 ^ op2) == 0)
+        {
+            status |= Z_POS >> STATUS_POS;
+        }
+        if ((op1 ^ op2) < 0)
+        {
+            status |= N_POS >> STATUS_POS;
+        }
+        break;
+    case 0xa: // CMP
+        if (op1 == op2)
+        {
+            status |= Z_POS >> STATUS_POS;
+        }
+        else if (op1 > op2)
+        {
+            status |= N_POS >> STATUS_POS;
+        }
+        break;
+    case 0xb: // CMN
+        if (op1 == -op2)
+        {
+            status |= Z_POS >> STATUS_POS;
+        }
+        if (op1 < -op2)
+        {
+            status |= N_POS >> STATUS_POS;
+        }
+        break;
+    case 0xc: // ORR
+        cpu->registers[Rd] = op1 | op2;
+        break;
+    case 0xd: // MOV
+        cpu->registers[Rd] = op2;
+        break;
+    case 0xe: // BIC
+        cpu->registers[Rd] = op1 & ~op2;
+        break;
+    case 0xf: // MVN
+        cpu->registers[Rd] = ~op2;
+        break;
+    }
+    if ((opcode >= 0x0 && opcode <= 0x1) || (opcode >= 0xc && opcode <= 0xf))
+    {
+        status |= (cpu->registers[cpsr] & FLAG_V) >> (V_POS - STATUS_POS);
+        if (cpu->registers[Rd] == 0)
+        {
+            status |= Z_POS >> STATUS_POS;
+        }
+        if (((cpu->registers[Rd] >> 31) & 0b1) == 0b1)
+        {
+            status |= N_POS >> STATUS_POS;
+        }
+    }
+}
 bool check_condition(struct cpu *cpu, uint8_t cond)
 {
     uint8_t state = (cpu->registers[cpsr] >> STATUS_POS) & STATUS_MASK;

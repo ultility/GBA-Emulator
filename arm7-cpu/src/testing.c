@@ -1,4 +1,5 @@
 #include "include/testing.h"
+#include "testing.h"
 
 void test_cpu()
 {
@@ -145,4 +146,31 @@ void test_arm_block_data_transfer(struct cpu *cpu)
     {
         printf("Passed\n");
     }
+}
+
+/*
+enum opt
+    {
+        I = 0b1 << 25,
+        OP = 0b1111 << 21,
+        S = 0b1 << 20,
+        RN = 0b1111 << 16,
+        RD = 0b1111 << 12,
+        RIS = 0b11111 << 7,
+        RS = 0b1111 << 8,
+        ST = 0b11 << 5,
+        R = 0b1 << 4,
+        RM = 0b1111,
+        IIS = 0b1111 << 8,
+        NN = 0b11111111,
+    };
+    */
+void test_arm_data_processing(struct cpu *cpu)
+{
+    printf("Testing ARM data processing instructions:\n");
+    printf("\t Testing AND...\t\t\t\t");
+    BYTE cond = AL;
+    BYTE opcode = 0x0;
+    BYTE rd = r0;
+    BYTE rn = r1;
 }
