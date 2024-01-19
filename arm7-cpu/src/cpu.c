@@ -1,5 +1,4 @@
 #include "include/cpu.h"
-#include "cpu.h"
 
 void cpu_init(struct cpu *cpu)
 {
@@ -329,7 +328,7 @@ void arm_single_data_transfer(struct cpu *cpu, WORD instruction)
         RM = 0b1111,
     };
 }
-void arm_data_proccessing(struct cpu *cpu, WORD instruction)
+void arm_data_processing(struct cpu *cpu, WORD instruction)
 {
     if (!check_condition(cpu, (instruction & 0b1111) << 28))
     {
@@ -356,6 +355,7 @@ void arm_data_proccessing(struct cpu *cpu, WORD instruction)
     int op1 = cpu->registers[(instruction & RN) >> 16];
     int op2 = 0;
     BYTE status = 0;
+    printf("\nI: %d\n", instruction & I);
     if ((instruction & I) == I)
     {
         op2 = instruction & NN;
@@ -363,9 +363,10 @@ void arm_data_proccessing(struct cpu *cpu, WORD instruction)
         {
             BYTE rotated = op2 & 0b11;
             op2 >>= 2;
-            op2 &= ~(11 << sizeof(op2) * __CHAR_BIT__ - 2);
+            op2 &= ~(0b11 << (sizeof(op2) * __CHAR_BIT__ - 2));
             op2 |= rotated << (sizeof(op2) * __CHAR_BIT__ - 2);
         }
+        printf("\n op2: %d\n", op2);
     }
     else
     {
@@ -384,7 +385,7 @@ void arm_data_proccessing(struct cpu *cpu, WORD instruction)
             op2 <<= shift_amount;
             for (int i = 0; i < shift_amount; i++)
             {
-                if (op2 & (0b1 << (sizeof(op2) * __CHAR_BIT__ - i)) > 0)
+                if ((op2 & (0b1 << (sizeof(op2) * __CHAR_BIT__ - i))) > 0)
                 {
                     status |= C_POS >> STATUS_POS;
                 }

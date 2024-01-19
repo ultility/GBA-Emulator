@@ -1,5 +1,11 @@
 {
-    "files.associations": {
-        "testing.h": "c"
-    }
+    "makefile.makePath": "make",
+    "makefile.makefilePath": "${workspaceFolder}/arm7-cpu/Makefile",
+    "makefile.launchConfigurations": [
+        {
+            "cwd": "/home/nadav/GBA-Emulator/build",
+            "binaryPath": "/home/nadav/GBA-Emulator/build/cpu",
+            "binaryArgs": []
+        }
+    ]
 }

@@ -9,10 +9,11 @@ CXXFLAGS = -std=c11 -Wall -I$(IDIR)
 LDFLAGS = -lSDL2
 
 # Makefile settings - Can be customized.
-APPNAME = myapp
+APPNAME = cpu
 EXT = .c
 SRCDIR = src
-OBJDIR = obj
+BUILDDIR = build
+OBJDIR = ${BUILDDIR}/obj
 
 ############## Do not change anything from here downwards! #############
 SRC = $(wildcard $(SRCDIR)/*$(EXT))
@@ -34,7 +35,7 @@ all: $(APPNAME)
 
 # Builds the app
 $(APPNAME): $(OBJ)
-	$(CC) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CXXFLAGS) -o ${BUILDDIR}/$@ $^ $(LDFLAGS)
 
 # Creates the dependecy rules
 %.d: $(SRCDIR)/%$(EXT)

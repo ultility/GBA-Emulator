@@ -1,5 +1,4 @@
 #include "include/testing.h"
-#include "testing.h"
 
 void test_cpu()
 {
@@ -8,6 +7,7 @@ void test_cpu()
     test_arm_branch(&cpu);
     test_arm_branch_and_exchange(&cpu);
     test_arm_block_data_transfer(&cpu);
+    test_arm_data_processing(&cpu);
 }
 
 void test_arm_branch(struct cpu *cpu)
@@ -173,4 +173,17 @@ void test_arm_data_processing(struct cpu *cpu)
     BYTE opcode = 0x0;
     BYTE rd = r0;
     BYTE rn = r1;
-}
+    BYTE imm = 15;
+    WORD instruction = cond << 28 | 1 << 25 | opcode << 21 | 1 << 20 | rn << 16 | rd << 12 | imm;
+    arm_data_proccessing(cpu, instruction);
+    {
+        if (cpu->registers[rd] == (cpu->registers[rn] & imm))
+        {
+            printf ("PASSED\n");
+        }
+        else
+        {
+            printf("FAILED\nrd: %d, result: %d, rn: %d, imm: %d\n", cpu->registers[rd], cpu->registers[rn] & imm, cpu->registers[rn], imm);
+        }
+    }
+}   
