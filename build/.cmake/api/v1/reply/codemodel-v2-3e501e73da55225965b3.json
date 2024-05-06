@@ -1,0 +1,158 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"childIndexes" : 
+					[
+						1,
+						3,
+						5
+					],
+					"jsonFile" : "directory-.-Debug-f5ebdc15457944623624.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"projectIndex" : 0,
+					"source" : "."
+				},
+				{
+					"build" : "display",
+					"childIndexes" : 
+					[
+						2
+					],
+					"jsonFile" : "directory-display-Debug-6dbe3f200d86692340c0.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "display"
+				},
+				{
+					"build" : "display/src",
+					"jsonFile" : "directory-display.src-Debug-5089d68b4fc2435b9c9a.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 1,
+					"projectIndex" : 0,
+					"source" : "display/src",
+					"targetIndexes" : 
+					[
+						2
+					]
+				},
+				{
+					"build" : "cpu",
+					"childIndexes" : 
+					[
+						4
+					],
+					"jsonFile" : "directory-cpu-Debug-8f873437da2f63b36e39.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "cpu"
+				},
+				{
+					"build" : "cpu/src",
+					"jsonFile" : "directory-cpu.src-Debug-296276c52fd1ab4921ed.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 3,
+					"projectIndex" : 0,
+					"source" : "cpu/src",
+					"targetIndexes" : 
+					[
+						1
+					]
+				},
+				{
+					"build" : "src",
+					"jsonFile" : "directory-src-Debug-b6cf2213fc5053b67c22.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "src",
+					"targetIndexes" : 
+					[
+						0
+					]
+				}
+			],
+			"name" : "Debug",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						4,
+						5
+					],
+					"name" : "GBA-Emulator",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 5,
+					"id" : "GBA-Emulator::@145eef247bfb46b6828c",
+					"jsonFile" : "target-GBA-Emulator-Debug-05b44c3b415ae44be1dd.json",
+					"name" : "GBA-Emulator",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 4,
+					"id" : "LibCpu::@b6f46aa8d4ba592b76ef",
+					"jsonFile" : "target-LibCpu-Debug-acfeeb74d5ed7f725d85.json",
+					"name" : "LibCpu",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "LibDisplay::@d0c719db86ba1502c682",
+					"jsonFile" : "target-LibDisplay-Debug-9160f6d0be16dea4bd1c.json",
+					"name" : "LibDisplay",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/home/ultility/projects/c/GBA-Emulator/build",
+		"source" : "/home/ultility/projects/c/GBA-Emulator"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 6
+	}
+}

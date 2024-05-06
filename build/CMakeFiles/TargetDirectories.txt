@@ -1,0 +1,15 @@
+/home/ultility/projects/c/GBA-Emulator/build/CMakeFiles/edit_cache.dir
+/home/ultility/projects/c/GBA-Emulator/build/CMakeFiles/rebuild_cache.dir
+/home/ultility/projects/c/GBA-Emulator/build/display/CMakeFiles/edit_cache.dir
+/home/ultility/projects/c/GBA-Emulator/build/display/CMakeFiles/rebuild_cache.dir
+/home/ultility/projects/c/GBA-Emulator/build/display/src/CMakeFiles/LibDisplay.dir
+/home/ultility/projects/c/GBA-Emulator/build/display/src/CMakeFiles/edit_cache.dir
+/home/ultility/projects/c/GBA-Emulator/build/display/src/CMakeFiles/rebuild_cache.dir
+/home/ultility/projects/c/GBA-Emulator/build/cpu/CMakeFiles/edit_cache.dir
+/home/ultility/projects/c/GBA-Emulator/build/cpu/CMakeFiles/rebuild_cache.dir
+/home/ultility/projects/c/GBA-Emulator/build/cpu/src/CMakeFiles/LibCpu.dir
+/home/ultility/projects/c/GBA-Emulator/build/cpu/src/CMakeFiles/edit_cache.dir
+/home/ultility/projects/c/GBA-Emulator/build/cpu/src/CMakeFiles/rebuild_cache.dir
+/home/ultility/projects/c/GBA-Emulator/build/src/CMakeFiles/GBA-Emulator.dir
+/home/ultility/projects/c/GBA-Emulator/build/src/CMakeFiles/edit_cache.dir
+/home/ultility/projects/c/GBA-Emulator/build/src/CMakeFiles/rebuild_cache.dir

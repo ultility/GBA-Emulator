@@ -1,11 +1,7 @@
 {
-    "makefile.makePath": "make",
-    "makefile.makefilePath": "${workspaceFolder}/arm7-cpu/Makefile",
-    "makefile.launchConfigurations": [
-        {
-            "cwd": "/home/nadav/GBA-Emulator/build",
-            "binaryPath": "/home/nadav/GBA-Emulator/build/cpu",
-            "binaryArgs": []
-        }
-    ]
+    "files.associations": {
+        "main.h": "c"
+    },
+    "C_Cpp.errorSquiggles": "enabled",
+    "cmake.configureOnOpen": true
 }

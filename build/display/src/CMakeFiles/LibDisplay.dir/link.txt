@@ -1,0 +1,2 @@
+/usr/bin/ar qc libLibDisplay.a CMakeFiles/LibDisplay.dir/display.c.o
+/usr/bin/ranlib libLibDisplay.a

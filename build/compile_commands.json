@@ -1,0 +1,20 @@
+[
+{
+  "directory": "/home/ultility/projects/c/GBA-Emulator/build/display/src",
+  "command": "/usr/bin/gcc  -I/home/ultility/projects/c/GBA-Emulator/display/include -isystem /usr/include/SDL2 -g -o CMakeFiles/LibDisplay.dir/display.c.o -c /home/ultility/projects/c/GBA-Emulator/display/src/display.c",
+  "file": "/home/ultility/projects/c/GBA-Emulator/display/src/display.c",
+  "output": "display/src/CMakeFiles/LibDisplay.dir/display.c.o"
+},
+{
+  "directory": "/home/ultility/projects/c/GBA-Emulator/build/cpu/src",
+  "command": "/usr/bin/gcc  -I/home/ultility/projects/c/GBA-Emulator/cpu/include -g -o CMakeFiles/LibCpu.dir/cpu.c.o -c /home/ultility/projects/c/GBA-Emulator/cpu/src/cpu.c",
+  "file": "/home/ultility/projects/c/GBA-Emulator/cpu/src/cpu.c",
+  "output": "cpu/src/CMakeFiles/LibCpu.dir/cpu.c.o"
+},
+{
+  "directory": "/home/ultility/projects/c/GBA-Emulator/build/src",
+  "command": "/usr/bin/gcc -DTIMES_TTF_PATH=\\\"/home/ultility/projects/c/GBA-Emulator/build/src/times.ttf\\\" -I/home/ultility/projects/c/GBA-Emulator/include -I/home/ultility/projects/c/GBA-Emulator/display/include -I/home/ultility/projects/c/GBA-Emulator/cpu/include -isystem /usr/include/SDL2 -g -o CMakeFiles/GBA-Emulator.dir/main.c.o -c /home/ultility/projects/c/GBA-Emulator/src/main.c",
+  "file": "/home/ultility/projects/c/GBA-Emulator/src/main.c",
+  "output": "src/CMakeFiles/GBA-Emulator.dir/main.c.o"
+}
+]

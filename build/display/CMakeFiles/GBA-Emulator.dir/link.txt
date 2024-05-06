@@ -1,0 +1,1 @@
+/usr/bin/cc "CMakeFiles/GBA-Emulator.dir/main.c.o" -o GBA-Emulator  -lLibDisplay 
