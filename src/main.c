@@ -1,6 +1,11 @@
 #include "main.h"
 #define font_path TIMES_TTF_PATH
-enum bool {False, True};
+enum bool
+{
+    False,
+    True
+};
+
 int main(int argc, char *argv[])
 {
     SDL_Init(SDL_INIT_VIDEO);
@@ -21,7 +26,7 @@ int main(int argc, char *argv[])
             exit(1);
         }
         SDL_Color color = {255, 255, 255, 255};
-        char reg_name[4] = {'R', '\0','\0','\0'};
+        char reg_name[4] = {'R', '\0', '\0', '\0'};
         if ((i - R0) < 10)
         {
             reg_name[1] = (i - R0) + '0';
@@ -44,8 +49,28 @@ int main(int argc, char *argv[])
     }
     struct cpu cpu;
     cpu_init(&cpu);
+    struct request_channel channel;
+    channel.id = 258;
+    channel.memory_address = 0x06000000;
+    channel.memory_range = 0x06017FFF - 0x06000000;
+    auto void func(struct request_data *data);
+    void func(struct request_data *data)
+    {
+        if (data->request_type == input)
+        {
+            data->data_type = word;
+            get_pixel(&emulator, data->address % emulator.width, data->address / emulator.width, &(data->data.word));
+        }
+        else
+        {
+            set_pixel(&emulator, data->address % emulator.width, data->address / emulator.width, &(data->data.word));
+        }
+    }
+    channel.push_to_channel = func;
+    add_request_channel(&cpu, channel);
+    set_pixel(&emulator, 100, 50, 0xFF0000);
     cpu.registers[CPSR] &= ~E_MASK;
-    cpu.registers[R1] = 0;
+    cpu.registers[R0] = channel.memory_address + emulator.width * 50 + 100;
     uint32_t str = SINGLE_DATA_TRANSFER_OPCODE | 0b1 << 24 | 0b1 << 21 | 0b1 << 20 | R0 << 16 | R1 << 12;
     cpu.memory[0] = str & 0xFF;
     str >>= 8;
@@ -58,6 +83,9 @@ int main(int argc, char *argv[])
     cpu_print_instruction(&cpu);
     arm_single_data_transfer(&cpu, cpu_fetch_arm_instruction(&cpu));
     cpu_print_registers(&cpu);
+    int color;
+    get_pixel(&emulator, 100, 50, &color);
+    printf("%08x\n", color);
     cpu.registers[CPSR] |= T_MASK;
     cpu_print_instruction(&cpu);
     enum bool run = True;

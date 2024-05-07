@@ -1,7 +1,9 @@
 {
     "files.associations": {
-        "main.h": "c"
+        "main.h": "c",
+        "cpu.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled",
-    "cmake.configureOnOpen": true
+    "cmake.configureOnOpen": true,
+    "C_Cpp.codeAnalysis.clangTidy.enabled": true,
 }

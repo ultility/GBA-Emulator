@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include "data_sizes.h"
 #include "instructions.h"
@@ -9,6 +10,29 @@
 #define MEMORY_SIZE STACK_SIZE
 
 #define STACK_START 0
+
+struct request_data
+{
+    enum {input, output} request_type;
+    enum {word, half_word, byte} data_type;
+    uint32_t address;
+    union
+    {
+        WORD word;
+        HALF_WORD half_word;
+        BYTE byte;
+    } data;
+};
+
+struct request_channel
+{
+    const char* name;
+    int id;
+    int memory_address;
+    int memory_range;
+    void (*push_to_channel)(struct request_data*);
+};
+
 enum cpsr_bit_positions
 {
     MODE_POS = 0,
@@ -93,6 +117,9 @@ struct cpu
 {
     uint32_t registers[register_count];
     BYTE memory[MEMORY_SIZE];
+    struct request_channel *request_channels;
+    int request_channel_count;
+    int request_channel_capacity;
 };
 
 void cpu_init(struct cpu *cpu);
@@ -117,5 +144,7 @@ void cpu_execute_thumb_instruction(struct cpu *cpu);
 
 void arm_single_data_transfer(struct cpu *cpu, WORD instruction);
 
+void add_request_channel(struct cpu *cpu, struct request_channel channel);
 
+void remove_request_channel(struct cpu *cpu, struct request_channel channel);
 
