@@ -1,6 +1,6 @@
 #include "display.h"
 
-void init_display(struct display *display, int width, int height, const char* title)
+void init_display(struct display *display, int width, int height, const char *title)
 {
     display->width = width;
     display->height = height;
@@ -37,7 +37,7 @@ void set_pixel(struct display *display, int x, int y, int32_t color)
 
 void get_pixel(struct display *display, int x, int y, int32_t *color)
 {
-    SDL_Rect dst = {.x = x,.y = y,.w = 1,.h = 1};
+    SDL_Rect dst = {.x = x, .y = y, .w = 1, .h = 1};
     if (SDL_RenderReadPixels(display->renderer, &(SDL_Rect){x, y, 1, 1}, SDL_PIXELFORMAT_RGBA8888, color, display->width) != 0)
     {
         SDL_Log("Failed to read pixel, %s", SDL_GetError());

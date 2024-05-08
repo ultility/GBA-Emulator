@@ -11,6 +11,14 @@ void cpu_init(struct cpu *cpu)
     cpu->request_channel_count = 0;
 }
 
+void free_cpu(struct cpu *cpu)
+{   
+    if (cpu->request_channel_capacity > 0)
+    {
+        free(cpu->request_channels);
+    }
+}
+
 void cpu_loop(struct cpu *cpu)
 {
 }
@@ -286,6 +294,62 @@ void arm_single_data_transfer(struct cpu *cpu, WORD instruction)
     else
     {
         // STORE
+        data.request_type = output;
+        if (address >= MEMORY_SIZE)
+        {
+            if ((instruction & B) == B)
+            {
+                data.data_type = byte;
+                data.data.byte = cpu->registers[sd_reg] & 0xFF;
+            }
+            else
+            {
+                data.data.word = cpu->registers[sd_reg];
+            }
+            for (int i = 0; i < cpu->request_channel_count; i++)
+            {
+                if (cpu->request_channels[i].memory_address <= address && cpu->request_channels[i].memory_address + cpu->request_channels[i].memory_range > address)
+                {
+                    data.address = address - cpu->request_channels[i].memory_address;
+                    (*(cpu->request_channels[i].push_to_channel))(&data);
+                }
+            }
+        }
+        else
+        {
+            if ((instruction & B) == B)
+            {
+                // only 1 byte
+                if ((cpu->registers[CPSR] & E_MASK) == E_MASK)
+                {
+                    cpu->memory[address + (sizeof(WORD) / sizeof(BYTE)) - 1] = cpu->registers[sd_reg] & 0xFF;
+                }
+                else
+                {
+                    cpu->memory[address] = cpu->registers[sd_reg] & 0xFF;
+                }
+            }
+            else
+            {
+                value = cpu->registers[sd_reg];
+                if ((cpu->registers[CPSR] & E_MASK) == E_MASK)
+                {
+                    for (int i = 0; i < 4; i++)
+                    {
+                        cpu->memory[address + i] = value & 0xFF;
+                        value >>= 8;
+                    }
+                }
+                else
+                {
+                    for (int i = 4; i > 0; i--)
+                    {
+                        cpu->memory[address + i - 1] = value & 0xFF;
+                        value >>= 8;
+                    }
+                }
+            }
+        }
     }
 }
 

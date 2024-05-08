@@ -6,7 +6,7 @@
     "configurations": [
 
         {
-            "name": "(gdb) Launch",
+            "name": "(gdb) Debug",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/src/GBA-Emulator",

@@ -124,6 +124,8 @@ struct cpu
 
 void cpu_init(struct cpu *cpu);
 
+void free_cpu(struct cpu *cpu);
+
 void cpu_loop(struct cpu *cpu);
 
 void cpu_print_registers(struct cpu *cpu);

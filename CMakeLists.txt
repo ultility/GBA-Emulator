@@ -5,4 +5,3 @@ add_subdirectory(display)
 add_subdirectory(cpu)
 include_directories(include)
 add_subdirectory(src)
-

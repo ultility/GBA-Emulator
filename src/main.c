@@ -8,7 +8,11 @@ enum bool
 
 int main(int argc, char *argv[])
 {
-    SDL_Init(SDL_INIT_VIDEO);
+    if (SDL_Init(SDL_INIT_VIDEO) != 0)
+    {
+        SDL_Log("Failed to initialize SDL, %s", SDL_GetError());
+        exit(-1);
+    }
     TTF_Init();
     struct display emulator;
     init_display(&emulator, 640, 480, "Gameboy Advance");
@@ -63,23 +67,19 @@ int main(int argc, char *argv[])
         }
         else
         {
-            set_pixel(&emulator, data->address % emulator.width, data->address / emulator.width, &(data->data.word));
+            set_pixel(&emulator, data->address % emulator.width, data->address / emulator.width, data->data.word);
         }
     }
     channel.push_to_channel = func;
     add_request_channel(&cpu, channel);
-    set_pixel(&emulator, 100, 50, 0xFF0000);
     cpu.registers[CPSR] &= ~E_MASK;
-    cpu.registers[R0] = channel.memory_address + emulator.width * 50 + 100;
-    uint32_t str = SINGLE_DATA_TRANSFER_OPCODE | 0b1 << 24 | 0b1 << 21 | 0b1 << 20 | R0 << 16 | R1 << 12;
-    cpu.memory[0] = str & 0xFF;
-    str >>= 8;
-    cpu.memory[1] = str & 0xFF;
-    str >>= 8;
-    cpu.memory[2] = str & 0xFF;
-    str >>= 8;
-    cpu.memory[3] = str & 0xFF;
-
+    cpu.registers[R0] = 0x0;;
+    uint32_t str = SINGLE_DATA_TRANSFER_OPCODE | 0b1 << 24 | 0b1 << 21 | 0b0 << 20 | R0 << 16 | R1 << 12;
+    cpu.memory[cpu.registers[PC]] = str & 0xFF;
+    cpu.memory[cpu.registers[PC] + 1] = (str >> 8) & 0xFF;
+    cpu.memory[cpu.registers[PC] + 2] = (str >> 16) & 0xFF;
+    cpu.memory[cpu.registers[PC] + 3] = (str >> 24) & 0xFF;
+    cpu.registers[R1] = 0xFFFFFFFF;
     cpu_print_instruction(&cpu);
     arm_single_data_transfer(&cpu, cpu_fetch_arm_instruction(&cpu));
     cpu_print_registers(&cpu);
@@ -100,13 +100,6 @@ int main(int argc, char *argv[])
             {
                 run = False;
             }
-            if (event.type == SDL_MOUSEBUTTONDOWN)
-            {
-                int x = event.button.x;
-                int y = event.button.y;
-                int color = 0xFFFF0000;
-                set_pixel(&emulator, x, y, color);
-            }
             if (event.type == SDL_WINDOWEVENT)
             {
                 if (event.window.event == SDL_WINDOWEVENT_CLOSE)
@@ -120,6 +113,7 @@ int main(int argc, char *argv[])
                     if (event.window.windowID == SDL_GetWindowID(emulator.window))
                     {
                         run = False;
+                        break;
                     }
                 }
             }
@@ -127,6 +121,7 @@ int main(int argc, char *argv[])
     }
     destory_display(&emulator);
     destory_display(&debug);
+    free_cpu(&cpu);
     SDL_Quit();
     return 0;
 }

@@ -19,3 +19,5 @@ void update_display(struct display *display);
 void set_pixel(struct display *display, int x, int y, int32_t color);
 
 void get_pixel(struct display *display, int x, int y, int32_t *color);
+
+SDL_HitTestResult MyCallback(SDL_Window* win, const SDL_Point* area, void* data);
