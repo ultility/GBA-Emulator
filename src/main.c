@@ -1,10 +1,4 @@
 #include "main.h"
-#define font_path TIMES_TTF_PATH
-enum bool
-{
-    False,
-    True
-};
 
 int main(int argc, char *argv[])
 {
@@ -19,47 +13,15 @@ int main(int argc, char *argv[])
     struct display debug;
     init_display(&debug, 100, 800, "DEBUG");
     SDL_SetRenderDrawColor(debug.renderer, 255, 255, 255, 255);
-    for (int i = R0; i < R12; i++)
-    {
-        SDL_Rect rect = {.x = 0, .y = (i - R0) * (800 / 15), .w = 100, .h = (800 / 15) - 1};
-        SDL_RenderDrawRect(debug.renderer, &rect);
-        TTF_Font *font = TTF_OpenFont(font_path, 12);
-        if (font == NULL)
-        {
-            SDL_Log("Failed to load font, %s", SDL_GetError());
-            exit(1);
-        }
-        SDL_Color color = {255, 255, 255, 255};
-        char reg_name[4] = {'R', '\0', '\0', '\0'};
-        if ((i - R0) < 10)
-        {
-            reg_name[1] = (i - R0) + '0';
-        }
-        else
-        {
-            reg_name[1] = (i - R0) / 10 + '0';
-            reg_name[2] = (i - R0) % 10 + '0';
-        }
-        SDL_Surface *text = TTF_RenderText_Solid(font, reg_name, color);
-        if (text == NULL)
-        {
-            SDL_Log("Failed to render text, %s", SDL_GetError());
-            exit(1);
-        }
-        SDL_Texture *texture = SDL_CreateTextureFromSurface(debug.renderer, text);
-        SDL_RenderCopy(debug.renderer, texture, NULL, &rect);
-        SDL_FreeSurface(text);
-        SDL_DestroyTexture(texture);
-    }
     struct cpu cpu;
     cpu_init(&cpu);
+    load_bios(&cpu);
     struct request_channel channel;
     channel.id = 258;
-    channel.memory_address = 0x06000000;
+    channel.memory_address = VIRTUAL_PALLETTE_RAM;
     channel.memory_range = 0x06017FFF - 0x06000000;
-    auto void func(struct request_data *data);
-    void func(struct request_data *data)
-    {
+    void func(struct request_data * data)
+    { // error can be ignored this syntax is for the gcc nested function declaration
         if (data->request_type == input)
         {
             data->data_type = word;
@@ -72,23 +34,19 @@ int main(int argc, char *argv[])
     }
     channel.push_to_channel = func;
     add_request_channel(&cpu, channel);
-    cpu.registers[CPSR] &= ~E_MASK;
-    cpu.registers[R0] = 0x0;;
-    uint32_t str = SINGLE_DATA_TRANSFER_OPCODE | 0b1 << 24 | 0b1 << 21 | 0b0 << 20 | R0 << 16 | R1 << 12;
-    cpu.memory[cpu.registers[PC]] = str & 0xFF;
-    cpu.memory[cpu.registers[PC] + 1] = (str >> 8) & 0xFF;
-    cpu.memory[cpu.registers[PC] + 2] = (str >> 16) & 0xFF;
-    cpu.memory[cpu.registers[PC] + 3] = (str >> 24) & 0xFF;
     cpu.registers[R1] = 0xFFFFFFFF;
     cpu_print_instruction(&cpu);
-    arm_single_data_transfer(&cpu, cpu_fetch_arm_instruction(&cpu));
+    while (true)
+    {
+        cpu_loop(&cpu);
+    }
     cpu_print_registers(&cpu);
     int color;
     get_pixel(&emulator, 100, 50, &color);
     printf("%08x\n", color);
     cpu.registers[CPSR] |= T_MASK;
     cpu_print_instruction(&cpu);
-    enum bool run = True;
+    bool run = true;
     while (run)
     {
         update_display(&emulator);
@@ -98,7 +56,7 @@ int main(int argc, char *argv[])
         {
             if (event.type == SDL_QUIT)
             {
-                run = False;
+                run = false;
             }
             if (event.type == SDL_WINDOWEVENT)
             {
@@ -112,7 +70,7 @@ int main(int argc, char *argv[])
                     SDL_HideWindow(SDL_GetWindowFromID(event.window.windowID));
                     if (event.window.windowID == SDL_GetWindowID(emulator.window))
                     {
-                        run = False;
+                        run = false;
                         break;
                     }
                 }
@@ -124,4 +82,123 @@ int main(int argc, char *argv[])
     free_cpu(&cpu);
     SDL_Quit();
     return 0;
+}
+
+const char* open_rom()
+{
+    char *buffer = calloc(PATH_MAX, sizeof(char));
+    buffer[PATH_MAX - 1] = '\0';
+    #ifdef __linux__
+    const char zenityP[] = "/usr/bin/zenity";
+    char Call[2048];
+
+    sprintf(Call, "%s  --file-selection --modal --title=\"%s\" ", zenityP, "Select file");
+
+    FILE *f = popen(Call, "r");
+
+    fgets(buffer, PATH_MAX-1, f);
+    
+    int ret = pclose(f);
+    if (ret < 0)
+    {
+        perror("file_name_dialog()");
+        return "\0";
+    }
+    if (strncmp(buffer + strlen(buffer) - 4 - 1, ".rom", 4) != 0)
+    {
+        printf("Error: File must be a .rom file.\n");
+        return "\0";
+    }
+    ret == 0; // return true if all is OK
+    return buffer;
+    #elif _WIN32
+    OPENFILENAME  ofn;        
+    memset(&ofn,0,sizeof(ofn));
+    ofn.lStructSize     = sizeof(ofn);
+    ofn.hwndOwner       = NULL;
+    ofn.hInstance       = NULL;
+    ofn.lpstrFilter     = "ROM Files\0*.rom\0\0";    
+    ofn.lpstrFile       = buffer;
+    ofn.nMaxFile        = MAX_PATH;
+    ofn.lpstrTitle      = "Please Select A File To Open";
+    ofn.Flags           = OFN_NONETWORKBUTTON |
+                          OFN_FILEMUSTEXIST |
+                          OFN_HIDEREADONLY;
+    if (!GetOpenFileName(&ofn))
+    {
+        return "\0";
+    }
+    return buffer;
+    #endif
+}
+
+void load_bios(struct cpu* cpu)
+{
+    FILE *f = fopen(BIOS_PATH, "rb");
+    if (f == NULL)
+    {
+        printf("Error: failed to open bios.elf, errno: %d", errno);
+        exit(1);
+    }
+    int fd = open(BIOS_PATH, O_RDONLY, 0);
+    if (fd < 0)
+    {
+        printf("Error: Could not open bios.elf, errno: %d\n", errno);
+        exit(1);
+    }
+    if (elf_version(EV_CURRENT) == EV_NONE)
+    {
+        printf("elf library initialization failed: %s\n", elf_errmsg(-1));
+    }
+    Elf *e = elf_begin(fd, ELF_C_READ, NULL);
+    if (e == NULL)
+    {
+        printf("Error: bios.elf is not an elf file, err: %s\n", elf_errmsg(-1));
+        exit(1);
+    }
+    if (elf_kind(e)!= ELF_K_ELF)
+    {
+        printf("Error: bios.elf is not an object file\n");
+        exit(1);
+    }
+    GElf_Ehdr ehdr;
+    if (gelf_getehdr(e, &ehdr) == NULL)
+    {
+        printf("Error: elf_getehdr() failed: %s\n", elf_errmsg(-1));
+        exit(1);
+    }
+    if (ehdr.e_type!= ET_EXEC)
+    {
+        printf("Error: bios.elf isnt an executeable file\n");
+        exit(1);
+    }
+    if (ehdr.e_phnum == 0)
+    {
+        printf("Error: elf header missing program header\n");
+    }
+    Elf_Scn *scn = NULL;
+    GElf_Shdr shdr;
+    size_t shdrndx;
+    elf_getshdrstrndx(e, &shdrndx);
+    while ((scn = elf_nextscn(e, scn)) != NULL)
+    {
+        if (gelf_getshdr(scn, &shdr) != &shdr)
+        {
+            printf("Error: failed to get shdr, %s", elf_errmsg(-1));
+        }
+        if (shdr.sh_flags & SHF_EXECINSTR)
+        {
+            fseek(f, shdr.sh_offset, SEEK_SET);
+            BYTE file_buffer[shdr.sh_size];
+            fread(file_buffer, shdr.sh_size, 1, f);
+            memcpy(cpu->memory, file_buffer, shdr.sh_size);
+            if (ehdr.e_ident[EI_DATA] == ELFDATA2MSB)
+            {
+                cpu->registers[CPSR] |= E_MASK;
+            }
+        }
+    }
+    elf_end(e);
+    close(fd);
+    fclose(f);
 }

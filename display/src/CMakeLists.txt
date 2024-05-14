@@ -1,5 +1,6 @@
 add_library(LibDisplay display.c)
-
+set("SDL2_DIR" "/usr/lib/x86_64-linux-gnu/cmake/SDL2")
 find_package(SDL2 REQUIRED)
+message(STATUS "SDL2_DIR: ${SDL2_INCLUDE_DIR}")
 include_directories(${SDL2_INCLUDE_DIRS})
 target_link_libraries(LibDisplay ${SDL2_LIBRARIES})

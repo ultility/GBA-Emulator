@@ -1,7 +1,16 @@
 {
     "files.associations": {
         "main.h": "c",
-        "cpu.h": "c"
+        "cpu.h": "c",
+        "display.h": "c",
+        "sdl_ttf.h": "c",
+        "limits.h": "c",
+        "windows.h": "c",
+        "data_sizes.h": "c",
+        "compare": "c",
+        "type_traits": "c",
+        "elf.h": "c",
+        "libelf.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled",
     "cmake.configureOnOpen": true,

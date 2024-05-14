@@ -21,6 +21,17 @@ void free_cpu(struct cpu *cpu)
 
 void cpu_loop(struct cpu *cpu)
 {
+    if ((cpu->registers[CPSR] & T_MASK) == T_MASK)
+    {
+        //HALF_WORD instruction = cpu_fetch_thumb_instruction(cpu);
+        cpu->registers[PC] += sizeof(HALF_WORD) / sizeof(BYTE);
+    }
+    else
+    {
+        WORD instruction = cpu_fetch_arm_instruction(cpu);
+        cpu_execute_arm_instruction(cpu, instruction);
+        cpu->registers[PC] += sizeof(WORD) / sizeof(BYTE);
+    }
 }
 
 void cpu_print_registers(struct cpu *cpu)
@@ -189,6 +200,43 @@ WORD cpu_fetch_arm_instruction(struct cpu *cpu)
     return instruction;
 }
 
+void cpu_execute_arm_instruction(struct cpu *cpu, WORD instruction)
+{
+    switch(cpu_decode_arm_instruction(instruction))
+        {
+            case BRANCH:
+                arm_branch(cpu, instruction);
+                break;
+            case BRANCH_AND_EXCHANGE:
+                arm_branch_and_exchange(cpu, instruction);
+                break;
+            case SOFTWARE_INTERRUPT:
+                break;
+            case BREAKPOINT:
+                break;
+            case UNDEFINED:
+                break;
+            case DATA_PROCESSING:
+                arm_data_processing(cpu, instruction);
+                break;
+            case MULTIPLY:
+                break;
+            case PSR_TRANSFER:
+                break;
+            case SINGLE_DATA_TRANSFER:
+                arm_single_data_transfer(cpu, instruction);
+                break;
+            case HDS_DATA_TRANSFER:
+                break;
+            case BLOCK_DATA_TRANSFER:
+                break;
+            case SINGLE_DATA_SWAP:
+                break;
+            case COPROCESSOR:
+                break;
+        }
+}
+
 void arm_single_data_transfer(struct cpu *cpu, WORD instruction)
 {
     enum
@@ -210,7 +258,24 @@ void arm_single_data_transfer(struct cpu *cpu, WORD instruction)
         Rm = 0b1111 << 0,
     };
     uint32_t sd_reg = (instruction & Rd) >> 12;
+    if (sd_reg == 0xF)
+    {
+        sd_reg = PC;
+    }
+    else
+    {
+        sd_reg++;
+    }
+    
     uint8_t address_reg = (instruction & Rn) >> 16;
+    if (address_reg == 0xF)
+    {
+        address_reg = PC;
+    }
+    else
+    {
+        address_reg++;
+    }
     uint32_t address_offset = 0;
     uint32_t value = 0;
     uint32_t address = cpu->registers[address_reg];
@@ -222,6 +287,13 @@ void arm_single_data_transfer(struct cpu *cpu, WORD instruction)
     else
     {
         // to be built after alu implementation
+        int offset_reg = instruction & Rm;
+        int shift_type = instruction & ST;
+        shift_type >>= 5;
+        int shift_amount = instruction & Is;
+        shift_amount >>= 7;
+        address_offset = cpu->registers[offset_reg];
+        address_offset = shift_immediate(cpu, shift_type, shift_amount, address_offset);
     }
     if ((instruction & U) != U)
     {
@@ -397,4 +469,303 @@ void remove_request_channel(struct cpu *cpu, struct request_channel channel)
     }
     cpu->request_channels[cpu->request_channel_count] = (struct request_channel){0};
     cpu->request_channel_count--;
+}
+
+void arm_branch(struct cpu *cpu, WORD instruction)
+{
+    int32_t opcode = (instruction & 0b1) >> 24;
+    int32_t offset = instruction & 0xFFFFFF;
+    if (((offset >> 23) & 0b1) == 0b1) // checks if offset should be negative
+    {
+        offset |= 0xFF000000;
+    }
+    if (offset % 4 == 2)
+    {
+        int32_t T_STATE = cpu->registers[CPSR] & T_MASK;
+        cpu->registers[CPSR] &= ~T_STATE;
+    }
+    if (opcode == 1)
+    {
+        cpu->registers[LR] = cpu->registers[PC];
+    }
+    cpu->registers[PC] += offset;
+}
+
+void arm_branch_and_exchange(struct cpu *cpu, WORD instruction)
+{
+    int opcode = (instruction >> 4) & 0xF;
+    int reg = instruction & 0xF;
+    if (opcode == 0b0010)
+    {
+        cpu->registers[CPSR] |= J_MASK;
+    }
+    else
+    {
+        if (opcode == 0b0011)
+        {
+            cpu->registers[LR] = cpu->registers[PC];
+        }
+        if ((cpu->registers[CPSR] & T_MASK) != T_MASK)
+        {
+            cpu->registers[reg] |= 0b1;
+            cpu->registers[PC] = cpu->registers[reg] - 1;
+        }
+        else
+        {
+            cpu->registers[CPSR] &= ~T_MASK;
+            cpu->registers[PC] += cpu->registers[reg];
+        }
+    }
+}
+
+void arm_data_processing(struct cpu *cpu, WORD instruction)
+{
+    enum
+    {
+        I = 0b1 << 25,
+        OPCODE = 0b1111 << 21,
+        S = 0b1 << 20,
+        Rn = 0b1111 << 16,
+        Rd = 0b1111 << 12,
+        // if I isnt set
+            // if R isnt set
+            IsR = 0b11111 << 7,
+            // if R is set
+            Rs = 0b1111 << 8,
+        ST = 0b11 << 5,
+        R = 0b1 << 4,
+        Rm = 0b1111 << 0,
+        // if I is set
+        ISI = 0b1111 << 8,
+        nn = 0xFF,
+    };
+    if (instruction != 0)
+    {
+        printf("hi");
+    }
+    int opcode = instruction & OPCODE;
+    bool s = (instruction & S) == S;
+    int32_t rn = (instruction & Rn) >> 16;
+    int32_t rd = (instruction & Rd) >> 12;
+    int op1 = cpu->registers[rn];
+    int op2 = 0;
+    if (rd == 0xF)
+    {
+        rd = PC;
+    }
+    else
+    {
+        rd++;
+    }
+    if (rn == 0xF)
+    {
+        rn = PC;
+    }
+    else
+    {
+        rn++;
+    }
+    if ((instruction & I) == I)
+    {
+        int shift_amount = instruction & ISI;
+        shift_amount >>= 8;
+        op2 = instruction & nn;
+        op2 = shift_immediate(cpu, ROR, shift_amount, op2);
+    }
+    switch (opcode >> 21)
+    {
+        case 0x0: // AND
+            cpu->registers[rd] = op1 & op2;
+            break;
+        case 0x1: // EOR
+            cpu->registers[rd] = op1 ^ op2;
+            break;
+        case 0x2: // SUB
+            cpu->registers[rd] = op1 - op2;
+            break;
+        case 0x3: // RSB
+            cpu->registers[rd] = op2 - op1;
+            break;
+        case 0x4: // ADD
+            cpu->registers[rd] = op1 + op2;
+            break;
+        case 0x5: // ADC
+            cpu->registers[rd] = op1 + op2 + (cpu->registers[CPSR] & C_MASK == C_MASK);
+            break;
+        case 0x6: // SBC
+            cpu->registers[rd] = op1 - op2 + (cpu->registers[CPSR] & C_MASK == C_MASK) - 1;
+            break;
+        case 0x7: // RSC
+            cpu->registers[rd] = op2 - op1 + (cpu->registers[CPSR] & C_MASK == C_MASK) - 1;
+            break;
+        case 0x8: // TST
+            if ((op1 & op2) == 0)
+            {
+                cpu->registers[CPSR] |= Z_MASK;
+            }
+            else
+            {
+                cpu->registers[CPSR] &= ~Z_MASK;
+                if ((op1 & op2) < 0)
+                {
+                    cpu->registers[CPSR] |= N_MASK;
+                }
+                else
+                {
+                    cpu->registers[CPSR] &= ~N_MASK;
+                }
+            }
+            break;
+        case 0x9: // TEQ
+        if ((op1 ^ op2) == 0)
+            {
+                cpu->registers[CPSR] |= Z_MASK;
+            }
+            else
+            {
+                cpu->registers[CPSR] &= ~Z_MASK;
+                if ((op1 ^ op2) < 0)
+                {
+                    cpu->registers[CPSR] |= N_MASK;
+                }
+                else
+                {
+                    cpu->registers[CPSR] &= ~N_MASK;
+                }
+            }
+            break;
+        case 0xA: // CMP
+            if ((op1 & op2) == 0)
+            {
+                cpu->registers[CPSR] |= Z_MASK;
+            }
+            else
+            {
+                cpu->registers[CPSR] &= ~Z_MASK;
+                if ((op1 & op2) < 0)
+                {
+                    cpu->registers[CPSR] |= N_MASK;
+                }
+                else
+                {
+                    cpu->registers[CPSR] &= ~N_MASK;
+                }
+            }
+            break;
+        case 0xB: // CMN
+            break;
+        case 0xC: // ORR
+            cpu->registers[rd] = op1 | op2;
+            break;
+        case 0xD: // MOV
+            cpu->registers[rd] = op2;
+            break;
+        case 0xE: // BIC
+            cpu->registers[rd] = op1 & (~op2);
+            break;
+        case 0xF: // MVN
+            cpu->registers[rd] = ~op2;
+            break;
+    }
+}
+
+int shift_immediate(struct cpu *cpu, enum shift_type shift_type, int shift_amount, WORD value)
+{
+    if (shift_amount == 0)
+    {
+        switch (shift_type)
+        {
+        case LSL:
+            return value;
+        case LSR:
+            if (((value >> 31) & 0b1) == 0b1)
+            {
+                cpu->registers[CPSR] |= C_MASK;
+            }
+            else
+            {
+                cpu->registers[CPSR] &= ~C_MASK;
+            }
+            return 0;
+        case ASR:
+            if (((value >> 31) & 0b1) == 0b1)
+            {
+                cpu->registers[CPSR] |= C_MASK;
+                return -1;
+            }
+            else
+            {
+                cpu->registers[CPSR] &= ~C_MASK;
+                return 0;
+            }
+        case ROR:
+            shift_amount = 1;
+            shift_type = RCR;
+            break;
+        }
+    }
+    switch (shift_type)
+    {
+        case LSL:
+            return value << shift_amount;
+        case LSR:
+            return value >> shift_amount; // does trigger overflow
+        case ASR:
+            bool negetive = value < 0;
+            value = value >> shift_amount;
+            if (negetive)
+            {
+                for (int i = 0; i < shift_amount; i++)
+                {
+                    value |= 0b1 << (32 - i);
+                }
+            }
+            return value;
+        case ROR:
+            for (int i = 0; i < shift_amount; i++)
+            {
+                if ((value & 0b1) == 0b1)
+                {
+                    value >> 1;
+                    value |= 0b1 << 31;
+                }
+                else
+                {
+                    value >>= 1;
+                    value &= ~(0b1 << 31);
+                }
+            }
+            return value;
+        case RCR:
+            for (int i = 0; i < shift_amount; i++)
+            {
+                int c = (cpu->registers[CPSR] & C_MASK) << (31 - C_POS);
+                if ((value & 0b1) == 0b1)
+                {
+                    cpu->registers[CPSR] |= C_MASK;
+                }
+                else    
+                {
+                    cpu->registers[CPSR] &= ~C_MASK;
+                }
+                value >>= 1;
+                value |= c;
+            }
+            return value;
+    }
+}
+
+bool test_overflow(int32_t op1, int32_t op2)
+{
+    // addition overflow
+    if (op1 > 0 && op2 > 0 && op1 > (INT32_MAX - op2))
+    {
+        return true;
+    }
+    // addition underflow
+    else if (op1 < 0 && op2 < 0 && op1 < (INT32_MIN - op2))
+    {
+        return true;
+    }
+    return false;
 }

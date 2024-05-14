@@ -3,13 +3,51 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include "data_sizes.h"
 #include "instructions.h"
 
-#define STACK_SIZE 1 * KB
-#define MEMORY_SIZE STACK_SIZE
+enum memory_sections_size
+{
+    BIOS_SIZE = 16 * KB,
+    STACK_SIZE = 1 * KB,
+    MEMORY_SIZE = STACK_SIZE + STACK_SIZE
+};
 
-#define STACK_START 0
+enum memory_sections
+{
+    BIOS_START = 0x00000000,
+    BIOS_END = BIOS_START + BIOS_SIZE,
+    STACK_START = BIOS_END,
+    STACK_END = STACK_START + STACK_SIZE,
+};
+
+enum virtual_memory_sections
+{
+    // internal memory
+    VIRTUAL_BIOS_START =        0x00000000,
+    VIRTUAL_WRAM_BOARD_START =  0x02000000,
+    VIRTUAL_WRAM_CHIP_START =   0x03000000,
+    VIRTUAL_IO_REGISTERS =      0x04000000,
+    // internal display memory
+    VIRTUAL_PALLETTE_RAM =      0x05000000,
+    VIRTUAL_VRAM =              0x06000000,
+    VIRTUAL_OAM =               0x07000000,
+    // external memory
+    VIRUTAL_ROM_WAIT_STATE_1 =  0x08000000,
+    VIRTUAL_ROM_WAIT_STATE_2 =  0x0A000000,
+    VIRTUAL_ROM_WAIT_STATE_3 =  0x0C000000,
+    VIRUTAL_ROM_SRAM =          0x0E000000,
+};
+
+enum shift_type
+{
+    LSL,
+    LSR,
+    ASR,
+    ROR,
+    RCR
+};
 
 struct request_data
 {
@@ -59,7 +97,7 @@ enum cpsr_masks
     F_MASK = 0b1 << F_POS,
     I_MASK = 0b1 << I_POS,
     A_MASK = 0b1 << A_POS,
-    E_MASK = 0b1 << E_POS,
+    E_MASK = 0b1 << E_POS, // 1 == big endian
     IT7_2_MASK = 0b111111 << IT7_2_POS,
     GE_MASK = 0b1111 << GE_POS,
     J_MASK = 0b1 << J_POS,
@@ -138,11 +176,17 @@ enum arm_instruction_set cpu_decode_arm_instruction(WORD instruction);
 
 WORD cpu_fetch_arm_instruction(struct cpu *cpu);
 
-void cpu_execute_arm_instruction(struct cpu *cpu);
+void cpu_execute_arm_instruction(struct cpu *cpu, WORD instruction);
 
 HALF_WORD cpu_fetch_thumb_instruction(struct cpu *cpu);
 
 void cpu_execute_thumb_instruction(struct cpu *cpu);
+
+void arm_branch(struct cpu *cpu, WORD instruction);
+
+void arm_branch_and_exchange(struct cpu *cpu, WORD instruction);
+
+void arm_data_processing(struct cpu *cpu, WORD instruction);
 
 void arm_single_data_transfer(struct cpu *cpu, WORD instruction);
 
@@ -150,3 +194,6 @@ void add_request_channel(struct cpu *cpu, struct request_channel channel);
 
 void remove_request_channel(struct cpu *cpu, struct request_channel channel);
 
+int shift_immediate(struct cpu *cpu, enum shift_type shift_type, int shift_amount, WORD value);
+
+bool test_overflow(int32_t op1, int32_t op2);
