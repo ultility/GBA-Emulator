@@ -2,17 +2,17 @@
 
 int main(int argc, char *argv[])
 {
-    if (SDL_Init(SDL_INIT_VIDEO) != 0)
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
     {
         SDL_Log("Failed to initialize SDL, %s", SDL_GetError());
         exit(-1);
     }
+    bool run = true;    
     TTF_Init();
     struct display emulator;
     init_display(&emulator, 640, 480, "Gameboy Advance");
     struct display debug;
-    init_display(&debug, 100, 800, "DEBUG");
-    SDL_SetRenderDrawColor(debug.renderer, 255, 255, 255, 255);
+    //init_display(&debug, 100, 800, "DEBUG");
     struct cpu cpu;
     cpu_init(&cpu);
     load_bios(&cpu);
@@ -34,23 +34,13 @@ int main(int argc, char *argv[])
     }
     channel.push_to_channel = func;
     add_request_channel(&cpu, channel);
-    cpu.registers[R1] = 0xFFFFFFFF;
-    cpu_print_instruction(&cpu);
-    while (true)
-    {
-        cpu_loop(&cpu);
-    }
-    cpu_print_registers(&cpu);
-    int color;
-    get_pixel(&emulator, 100, 50, &color);
-    printf("%08x\n", color);
-    cpu.registers[CPSR] |= T_MASK;
-    cpu_print_instruction(&cpu);
-    bool run = true;
     while (run)
     {
-        update_display(&emulator);
-        update_display(&debug);
+        if (SDL_GetTicks() - emulator.last_update > (SECOND / MAX_FPS))
+        {
+            update_display(&emulator, SDL_GetTicks());
+        }
+        cpu_loop(&cpu);
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
@@ -178,8 +168,6 @@ void load_bios(struct cpu* cpu)
     }
     Elf_Scn *scn = NULL;
     GElf_Shdr shdr;
-    size_t shdrndx;
-    elf_getshdrstrndx(e, &shdrndx);
     while ((scn = elf_nextscn(e, scn)) != NULL)
     {
         if (gelf_getshdr(scn, &shdr) != &shdr)
@@ -188,6 +176,11 @@ void load_bios(struct cpu* cpu)
         }
         if (shdr.sh_flags & SHF_EXECINSTR)
         {
+            if (shdr.sh_size > (BIOS_SIZE - 0xFF))
+            {
+                printf("Error: section is bigger that max bios size");
+                exit(-1);
+            }
             fseek(f, shdr.sh_offset, SEEK_SET);
             BYTE file_buffer[shdr.sh_size];
             fread(file_buffer, shdr.sh_size, 1, f);
@@ -196,6 +189,9 @@ void load_bios(struct cpu* cpu)
             {
                 cpu->registers[CPSR] |= E_MASK;
             }
+            GElf_Phdr phdr;
+            cpu->registers[PC] = ehdr.e_entry - shdr.sh_addr;
+            break;
         }
     }
     elf_end(e);

@@ -6,7 +6,7 @@ set("SDL2_ttf_DIR" "/usr/lib/x86_64-linux-gnu/cmake/SDL2_ttf/")
 find_package(SDL2_ttf REQUIRED)
 find_library(LibElf LibElf)
 target_link_libraries(${PROJECT_NAME} LibDisplay LibCpu SDL2_ttf::SDL2_ttf ${LibElf})
-
+add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD COMMAND sh ${PROJECT_SOURCE_DIR}/asm/assemble.sh bios)
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/times.ttf DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 file(COPY ${CMAKE_SOURCE_DIR}/asm/bios.elf DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 add_definitions(-DTIMES_TTF_PATH="${CMAKE_CURRENT_BINARY_DIR}/times.ttf")

@@ -14,5 +14,8 @@
 #include "display.h"
 #include "cpu.h"
 
+#define MAX_FPS 60
+#define SECOND 1000
+
 const char* open_rom();
 void load_bios(struct cpu* cpu);

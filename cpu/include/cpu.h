@@ -4,8 +4,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+
 #include "data_sizes.h"
 #include "instructions.h"
+#include "syscall.h"
 
 enum memory_sections_size
 {
@@ -90,6 +92,17 @@ enum cpsr_bit_positions
     N_POS = 31,
 };
 
+enum cpu_mode
+{
+    USER = 0x10,
+    SYS = 0x1F,
+    UND = 0x1B,
+    SVC = 0x13,
+    IRQ = 0x12,
+    FIQ = 0x11,
+    ABT = 0x17
+};
+
 enum cpsr_masks
 {
     MODE_MASK = 0b11111 << MODE_POS,
@@ -135,19 +148,19 @@ enum cpu_registers
     R12_FIQ,
     SP_FIQ,
     LR_FIQ,
-    CPSR_FIQ,
+    SPSR_FIQ,
     SP_SVC,
     LR_SVC,
-    CPSR_SVC,
+    SPSR_SVC,
     SP_ABT,
     LR_ABT,
-    CPSR_ABT,
+    SPSR_ABT,
     SP_IRQ,
     LR_IRQ,
-    CPSR_IRQ,
+    SPSR_IRQ,
     SP_UND,
     LR_UND,
-    CPSR_UND,
+    SPSR_UND,
     register_count
 };
 
@@ -189,6 +202,12 @@ void arm_branch_and_exchange(struct cpu *cpu, WORD instruction);
 void arm_data_processing(struct cpu *cpu, WORD instruction);
 
 void arm_single_data_transfer(struct cpu *cpu, WORD instruction);
+
+void arm_software_interrupt(struct cpu *cpu, WORD instruction);
+
+void arm_multiply(struct cpu *cpu, WORD instruction);
+
+void cpu_switch_mode(struct cpu *cpu, enum cpu_mode mode);
 
 void add_request_channel(struct cpu *cpu, struct request_channel channel);
 
