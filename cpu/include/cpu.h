@@ -207,6 +207,14 @@ void arm_software_interrupt(struct cpu *cpu, WORD instruction);
 
 void arm_multiply(struct cpu *cpu, WORD instruction);
 
+void arm_psr_transfer(struct cpu *cpu, WORD instruction);
+
+void arm_hds_data_transfer(struct cpu *cpu, WORD instruction);
+
+void arm_block_data_transfer(struct cpu *cpu, WORD instruction);
+
+void arm_single_data_swap(struct cpu *cpu, WORD instruction);
+
 void cpu_switch_mode(struct cpu *cpu, enum cpu_mode mode);
 
 void add_request_channel(struct cpu *cpu, struct request_channel channel);

@@ -109,9 +109,6 @@ void cpu_print_instruction(struct cpu *cpu)
         case SINGLE_DATA_SWAP:
             printf("\tsingle data swap");
             break;
-        case COPROCESSOR:
-            printf("\tcoprocessor");
-            break;
         }
         printf("\n");
     }
@@ -149,7 +146,11 @@ enum arm_instruction_set cpu_decode_arm_instruction(WORD instruction)
     }
     if ((instruction & MULTIPLY_OPCODE_MASK) == MULTIPLY_OPCODE)
     {
-        return MULTIPLY;
+        if (((instruction & (0b1001 << 4)) == (0b1001 << 4)) ||
+            ((((instruction >> 21) & 0b1111) > 0b1000) && (((instruction >> 4) & 0b1001) & 0b1000) == 0b1000))
+        {
+            return MULTIPLY;
+        }
     }
     if ((instruction & HDS_DATA_TRANSFER_OPCODE_MASK) == HDS_DATA_TRANSFER_OPCODE)
     {
@@ -162,10 +163,6 @@ enum arm_instruction_set cpu_decode_arm_instruction(WORD instruction)
     if ((instruction & DATA_PROCESSING_OPCODE_MASK) == DATA_PROCESSING_OPCODE)
     {
         return DATA_PROCESSING;
-    }
-    if ((instruction & COPROCESSOR_OPCODE_MASK) == COPROCESSOR_OPCODE)
-    {
-        return COPROCESSOR;
     }
     return UNDEFINED;
 }
@@ -218,6 +215,7 @@ void cpu_execute_arm_instruction(struct cpu *cpu, WORD instruction)
         cpu->registers[PC] += sizeof(WORD) / sizeof(BYTE);
         break;
     case PSR_TRANSFER:
+        arm_psr_transfer(cpu, instruction);
         cpu->registers[PC] += sizeof(WORD) / sizeof(BYTE);
         break;
     case SINGLE_DATA_TRANSFER:
@@ -225,15 +223,15 @@ void cpu_execute_arm_instruction(struct cpu *cpu, WORD instruction)
         cpu->registers[PC] += sizeof(WORD) / sizeof(BYTE);
         break;
     case HDS_DATA_TRANSFER:
+        arm_hds_data_transfer(cpu, instruction);
         cpu->registers[PC] += sizeof(WORD) / sizeof(BYTE);
         break;
     case BLOCK_DATA_TRANSFER:
+        arm_block_data_transfer(cpu, instruction);
         cpu->registers[PC] += sizeof(WORD) / sizeof(BYTE);
         break;
     case SINGLE_DATA_SWAP:
-        cpu->registers[PC] += sizeof(WORD) / sizeof(BYTE);
-        break;
-    case COPROCESSOR:
+        arm_single_data_swap(cpu, instruction);
         cpu->registers[PC] += sizeof(WORD) / sizeof(BYTE);
         break;
     }
@@ -534,7 +532,6 @@ void arm_data_processing(struct cpu *cpu, WORD instruction)
     bool s = (instruction & S) == S;
     int32_t rn = (instruction & Rn) >> 16;
     int32_t rd = (instruction & Rd) >> 12;
-    int op1 = cpu->registers[rn];
     int op2 = 0;
     if (rd == 0xF)
     {
@@ -552,12 +549,50 @@ void arm_data_processing(struct cpu *cpu, WORD instruction)
     {
         rn++;
     }
+    int op1 = cpu->registers[rn];
     if ((instruction & I) == I)
     {
         int shift_amount = instruction & ISI;
         shift_amount >>= 8;
         op2 = instruction & nn;
         op2 = shift_immediate(cpu, ROR, shift_amount, op2);
+    }
+    else
+    {
+        int rm = instruction & Rm;
+        if (rm == 0xF)
+        {
+            rm = 0;
+        }
+        else
+        {
+            rm++;
+        }
+        op2 = cpu->registers[rm];
+        int shift_amount = 0;
+        if (instruction & R)
+        {
+            int rs = instruction & Rs;
+            rs >>= 8;
+            if (rs == 0xF)
+            {
+                rs = 0;
+            }
+            else
+            {
+                rs++;
+            }
+
+            shift_amount = cpu->registers[rs];
+        }
+        else
+        {
+            shift_amount = instruction & IsR;
+            shift_amount >>= 7;
+        }
+        int shift_type = (instruction >> 5) & 0b11;
+        shift_amount &= 0xFF;
+        op2 = shift_immediate(cpu, shift_type, shift_amount, op2);
     }
     switch (opcode >> 21)
     {
@@ -794,12 +829,44 @@ void arm_multiply(struct cpu *cpu, WORD instruction)
         //
         RM = 0b1111
     };
-    int opcode = instruction & opcode;
+    int opcode = instruction & OPCODE;
     opcode >>= 21;
     int rd = (instruction & RD) >> 16;
     int rn = (instruction & RN) >> 12;
     int rs = (instruction & RS) >> 8;
     int rm = (instruction & RM);
+    if (rd == 0xF)
+    {
+        rd = PC;
+    }
+    else
+    {
+        rd++;
+    }
+    if (rn == 0xF)
+    {
+        rn = PC;
+    }
+    else
+    {
+        rn++;
+    }
+    if (rm == 0xF)
+    {
+        rm = PC;
+    }
+    else
+    {
+        rm++;
+    }
+    if (rs == 0xF)
+    {
+        rs = PC;
+    }
+    else
+    {
+        rs++;
+    }
     int64_t op1 = cpu->registers[rm];
     int64_t op2 = cpu->registers[rs];
     int64_t rd_hi_low = cpu->registers[rd];
@@ -823,6 +890,7 @@ void arm_multiply(struct cpu *cpu, WORD instruction)
             op2 >>= 16;
         }
     }
+
     switch (opcode)
     {
     case 0b0000: // MUL
@@ -898,4 +966,367 @@ void arm_multiply(struct cpu *cpu, WORD instruction)
         }
         cpu->registers[CPSR] &= ~C_MASK;
     }
+}
+
+void arm_psr_transfer(struct cpu *cpu, WORD instruction)
+{
+    enum
+    {
+        I = 0b1 << 25,
+        PSR = 0b1 << 22,
+        OPCODE = 0b1 << 21,
+        // For MRS
+        RD = 0b1111 << 12,
+        // for MSR
+        F = 0b1 << 19,
+        S = 0b1 << 18,
+        X = 0b1 << 17,
+        C = 0b1 << 16,
+        // I = 0
+        RM = 0b1111,
+        // I = 1
+        SHIFT = 0b1111 << 8,
+        IMM = 0b11111111
+    };
+    uint32_t dst = CPSR;
+    if (instruction & PSR)
+    {
+        switch (cpu->registers[CPSR] & MODE_MASK)
+        {
+        case USER:
+        case SYS:
+            break;
+        case SVC:
+            dst = SPSR_SVC;
+            break;
+        case ABT:
+            dst = SPSR_ABT;
+            break;
+        case UND:
+            dst = SPSR_UND;
+            break;
+        case FIQ:
+            dst = SPSR_FIQ;
+            break;
+        case IRQ:
+            dst = SPSR_IRQ;
+            break;
+        }
+    }
+    if (instruction & OPCODE) // MSR
+    {
+        int op = 0;
+        if (instruction & I)
+        {
+            int shift_amount = instruction & SHIFT;
+            shift_amount >>= 8;
+            op = shift_immediate(cpu, ROR, shift_amount, instruction & IMM);
+        }
+        else
+        {
+            int rm = instruction & RM;
+            if (rm == 0xFF)
+            {
+                op = cpu->registers[PC];
+            }
+            else
+            {
+                op = cpu->registers[rm + 1];
+            }
+        }
+        if (instruction & F)
+        {
+            cpu->registers[dst] &= 0x00FFFFFF;
+            cpu->registers[dst] |= op;
+        }
+        else if (instruction & S)
+        {
+            cpu->registers[dst] &= 0xFF00FFFF;
+            cpu->registers[dst] |= op;
+        }
+        else if (instruction & X)
+        {
+            cpu->registers[dst] &= 0xFFFF00FF;
+            cpu->registers[dst] |= op;
+        }
+        else if (instruction & C)
+        {
+            cpu->registers[dst] &= 0xFFFFFF00;
+            cpu->registers[dst] |= op;
+        }
+    }
+    else // MRS
+    {
+        int rd = instruction & RD;
+        rd >>= 12;
+        if (rd == 0xFF)
+        {
+            rd = PC;
+        }
+        else
+        {
+            rd++;
+        }
+        cpu->registers[rd] = cpu->registers[dst];
+    }
+}
+
+void arm_hds_data_transfer(struct cpu *cpu, WORD instruction)
+{
+    enum
+    {
+        P = 0b1 << 24,
+        U = 0b1 << 23,
+        I = 0b1 << 22,
+        // P = 1
+        W = 0b1 << 21,
+        L = 0b1 << 20,
+        RN = 0b1111 << 16,
+        RD = 0b1111 << 12,
+        UPPER_IMM = 0b1111 << 8,
+        OPCODE = 0b11 << 6,
+        // I = 0
+        RM = 0b1111,
+        // I = 1
+        LOWER_IMM = 0b1111
+    };
+    uint32_t rn = instruction & RN;
+    uint32_t rd = instruction & RD;
+    rn >>= 16;
+    rd >>= 12;
+    int base = 0;
+    if (rn == 0xFF)
+    {
+        rn = PC;
+    }
+    else
+    {
+        rn++;
+    }
+    if (rd == 0xFF)
+    {
+        rd = PC;
+    }
+    else
+    {
+        rd++;
+    }
+    base = cpu->registers[rn];
+    int offset = 0;
+    if (instruction & I)
+    {
+        offset += (instruction & UPPER_IMM) >> 4;
+        offset += instruction & LOWER_IMM;
+    }
+    else
+    {
+        int rm = instruction & RM;
+        if (rm == 0xFF)
+        {
+            rm = PC;
+        }
+        else
+        {
+            rm++;
+        }
+        offset = cpu->registers[rm];
+    }
+    if ((instruction & U) != U)
+    {
+        offset = -offset;
+    }
+    if (instruction & P)
+    {
+        base += offset;
+        if (instruction & W)
+        {
+            cpu->registers[rn] = base;
+        }
+    }
+    if (instruction & L)
+    {
+        // STR halfword
+        cpu->memory[base] = cpu->registers[rd];
+    }
+    else
+    {
+        switch ((instruction & OPCODE) >> 5)
+        {
+        case 0b01: // load unsigned halfword
+            cpu->registers[rd] = 0;
+            cpu->registers[rd] |= cpu->memory[base];
+            cpu->registers[rd] <<= 8;
+            cpu->registers[rd] |= cpu->memory[base + 1];
+            break;
+        case 0b10: // load signed byte
+            cpu->registers[rd] = cpu->memory[base];
+            break;
+        case 0b11: // load signed halfword
+            cpu->registers[rd] = cpu->memory[base];
+            cpu->registers[rd] <<= 8;
+            cpu->registers[rd] |= cpu->memory[base + 1];
+            break;
+        }
+    }
+    if ((instruction & P) != P)
+    {
+        base += offset;
+        cpu->registers[rn] = base;
+    }
+}
+
+void arm_block_data_transfer(struct cpu *cpu, WORD instruction)
+{
+    enum
+    {
+        P = 0b1 << 24,
+        U = 0b1 << 23,
+        S = 0b1 << 22,
+        W = 0b1 << 21,
+        L = 0b1 << 20,
+        RN = 0b1111 << 16,
+        RLIST = 0b1111111111111111
+    };
+    int rn = instruction & RN;
+    rn >>= 16;
+    rn++;
+    int base = cpu->registers[rn];
+    int rlist = instruction & RLIST;
+    rlist <<= 1;
+    rlist |= (rlist >> 16) & 0b1;
+    int offset = 0;
+    for (int i = rlist; i > 0; i >>= 1)
+    {
+        if (i & 0b1)
+        {
+            offset += sizeof(WORD);
+        }
+    }
+    if ((instruction & U) != U)
+    {
+        offset = -offset;
+    }
+    if (instruction & P)
+    {
+        base += offset;
+    }
+    int count = 0;
+    if (instruction & L)
+    {
+        // LDM
+        for (int i = 1; rlist > 0; i++)
+        {
+            if (rlist & 0b1)
+            {
+                cpu->registers[i] = 0;
+                for (int b = 0; b < sizeof(WORD); b++)
+                {
+                    cpu->registers[i] <<= __CHAR_BIT__;
+                    cpu->registers[i] |= cpu->memory[base + (count * sizeof(WORD)) + b];
+                }
+                count++;
+            }
+        }
+        if (instruction & S)
+        {
+            enum cpu_mode mode = cpu->registers[CPSR] & MODE_MASK;
+            bool thumb = (cpu->registers[CPSR] & T_MASK) >> T_POS;
+            switch(mode)
+            {
+                case USER:
+                case SYS:
+                    break;
+                case SVC:
+                    cpu->registers[CPSR] = cpu->registers[SPSR_SVC];
+                    break;
+                case ABT:
+                    cpu->registers[CPSR] = cpu->registers[SPSR_ABT];
+                    break;
+                case UND:
+                    cpu->registers[CPSR] = cpu->registers[SPSR_UND];
+                    break;
+                case IRQ:
+                    cpu->registers[CPSR] = cpu->registers[SPSR_IRQ];
+                    break;
+                case FIQ:
+                    cpu->registers[CPSR] = cpu->registers[SPSR_FIQ];
+                    break;
+            }
+            if (thumb)
+            {
+                cpu->registers[CPSR] |= T_MASK;
+            }
+            else
+            {
+                cpu->registers[CPSR] &= ~T_MASK;
+            }
+        }
+    }
+    else
+    {
+        // STM
+        for (int i = 1; rlist > 0; i++)
+        {
+            if (rlist & 0b1)
+            {
+                for (int b = sizeof(WORD) - 1; b > 0; b--)
+                {
+                    cpu->memory[base + (count * sizeof(WORD)) + b] = cpu->registers[i] & (0xFF << (b * __CHAR_BIT__));
+                }
+                count++;
+            }
+        }
+        if (instruction & S)
+        {
+            cpu->registers[CPSR] ^= cpu->registers[CPSR] & MODE_MASK;
+            cpu->registers[CPSR] |= USER << MODE_POS;
+        }
+    }
+    if ((instruction & P) != P)
+    {
+        base += offset;
+    }
+    if (instruction & W)
+    {
+        cpu->registers[rn] = base;
+    }
+}
+
+void arm_single_data_swap(struct cpu *cpu, WORD instruction)
+{
+    enum
+    {
+        B = 0b1 << 22,
+        RN = 0b1111 << 16,
+        RD = 0b1111 << 12,
+        RM = 0b1111
+    };
+
+    int rn = instruction & RN;
+    rn >>= 16;
+    int rd = instruction & RD;
+    rd >>= 12;
+    int rm = instruction & RM;
+    rn++;
+    rd++;
+    rm++;
+    int rm_value = cpu->registers[rm]; // in case that rm = rd
+    if (instruction & B)
+    {
+        cpu->registers[rd] = cpu->memory[cpu->registers[rn]];
+        cpu->registers[rd] &= UINT8_MAX; // for when [rn] is negetive
+        rm_value &= UINT8_MAX;
+        cpu->memory[cpu->registers[rn]] = rm_value;
+    }
+    else
+    {
+        cpu->registers[rd] = 0;
+        for (int i = 0; i < sizeof(WORD); i++)
+        {
+            cpu->registers[rd] <<= 8;
+            cpu->registers[rd] |= cpu->memory[cpu->registers[rn] + i];
+            cpu->memory[cpu->registers[rn] + i] = rm_value << (i * __CHAR_BIT__);
+        }
+    }
+
 }

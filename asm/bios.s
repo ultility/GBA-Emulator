@@ -10,6 +10,9 @@ _start:
     ADD r4, r1, #5
     ADD r4, r1, r2
     ADD r4, r1, r1
+    MOV r3, #3
+    MUL r5, r1, r3
+    MLA r6, r1, r1, r3
     b _exit
 
 .section .data
