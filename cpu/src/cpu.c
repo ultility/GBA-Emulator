@@ -29,7 +29,10 @@ void cpu_loop(struct cpu *cpu)
     else
     {
         WORD instruction = cpu_fetch_arm_instruction(cpu);
-        cpu_execute_arm_instruction(cpu, instruction);
+        if (check_condition(cpu, instruction))
+        {
+            cpu_execute_arm_instruction(cpu, instruction);
+        }
     }
 }
 
@@ -528,6 +531,7 @@ void arm_data_processing(struct cpu *cpu, WORD instruction)
         ISI = 0b1111 << 8,
         nn = 0xFF,
     };
+    uint32_t updated_cpsr = cpu->registers[CPSR];
     int opcode = instruction & OPCODE;
     bool s = (instruction & S) == S;
     int32_t rn = (instruction & Rn) >> 16;
@@ -688,6 +692,20 @@ void arm_data_processing(struct cpu *cpu, WORD instruction)
     case 0xF: // MVN
         cpu->registers[rd] = ~op2;
         break;
+    }
+    if (instruction & S)
+    {
+        if ((int32_t)cpu->registers[rd] < 0)
+        {
+            updated_cpsr |= N_MASK;
+            updated_cpsr &= ~Z_MASK;
+        }
+        else if (cpu->registers[rd] == 0)
+        {
+            updated_cpsr |= Z_MASK;
+            updated_cpsr &= ~N_MASK;
+        }
+        cpu->registers[CPSR] = updated_cpsr;
     }
 }
 
@@ -1231,26 +1249,26 @@ void arm_block_data_transfer(struct cpu *cpu, WORD instruction)
         {
             enum cpu_mode mode = cpu->registers[CPSR] & MODE_MASK;
             bool thumb = (cpu->registers[CPSR] & T_MASK) >> T_POS;
-            switch(mode)
+            switch (mode)
             {
-                case USER:
-                case SYS:
-                    break;
-                case SVC:
-                    cpu->registers[CPSR] = cpu->registers[SPSR_SVC];
-                    break;
-                case ABT:
-                    cpu->registers[CPSR] = cpu->registers[SPSR_ABT];
-                    break;
-                case UND:
-                    cpu->registers[CPSR] = cpu->registers[SPSR_UND];
-                    break;
-                case IRQ:
-                    cpu->registers[CPSR] = cpu->registers[SPSR_IRQ];
-                    break;
-                case FIQ:
-                    cpu->registers[CPSR] = cpu->registers[SPSR_FIQ];
-                    break;
+            case USER:
+            case SYS:
+                break;
+            case SVC:
+                cpu->registers[CPSR] = cpu->registers[SPSR_SVC];
+                break;
+            case ABT:
+                cpu->registers[CPSR] = cpu->registers[SPSR_ABT];
+                break;
+            case UND:
+                cpu->registers[CPSR] = cpu->registers[SPSR_UND];
+                break;
+            case IRQ:
+                cpu->registers[CPSR] = cpu->registers[SPSR_IRQ];
+                break;
+            case FIQ:
+                cpu->registers[CPSR] = cpu->registers[SPSR_FIQ];
+                break;
             }
             if (thumb)
             {
@@ -1328,5 +1346,279 @@ void arm_single_data_swap(struct cpu *cpu, WORD instruction)
             cpu->memory[cpu->registers[rn] + i] = rm_value << (i * __CHAR_BIT__);
         }
     }
+}
 
+void thumb_software_interrupt(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_unconditional_branch(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_conditional_branch(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_multiple_load_store(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_long_branch_and_link(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_offset_stackpointer(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_push_pop_registers(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_load_store_halfword(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_sp_relative_load_store(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_load_address(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_load_store_with_offset(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_load_store_with_reg_offset(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_load_store_sign_extended_byte_halfword(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_pc_relative_load(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_hi_reg_operation_branch_exchange(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_alu_operations(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_mov_cmp_add_sub_imm(struct cpu *cpu, HALF_WORD instruction)
+{
+    enum
+    {
+        OPCODE = 0b11 << 11,
+        RD = 0b111 << 8,
+        NN = 0b11111111
+    };
+    int opcode = instruction & OPCODE;
+    opcode >>= 11;
+    int rd = instruction & RD;
+    rd >>= 8;
+    rd++;
+    int imm = instruction & NN;
+    switch(opcode)
+    {
+        case 0b00: // MOV
+            cpu->registers[rd] = imm;
+            if (imm == 0)
+            {
+                cpu->registers[CPSR] |= Z_MASK;
+                cpu->registers[CPSR] &= ~N_MASK;
+            }
+            else if (imm < 0)
+            {
+                cpu->registers[CPSR] |= N_MASK;
+                cpu->registers[CPSR] &= ~Z_MASK;
+            }
+            break;
+        case 0b01: // CMP
+            int result = cpu->registers[rd] - imm;
+            cpu->registers[CPSR] &= ~C_MASK;
+            if (test_overflow(cpu->registers[rd], -imm))
+            {
+                cpu->registers[CPSR] |= V_MASK;
+            }
+            else
+            {
+                cpu->registers[CPSR] &= ~V_MASK;
+            }
+            if (result == 0)
+            {
+                cpu->registers[CPSR] |= Z_MASK;
+                cpu->registers[CPSR] &= ~N_MASK;
+            }
+            else if (result < 0)
+            {
+                cpu->registers[CPSR] |= N_MASK;
+                cpu->registers[CPSR] &= ~Z_MASK;
+            }
+        case 0b10: // ADD
+            if (test_overflow(cpu->registers[rd], imm))
+            {
+                cpu->registers[CPSR] |= V_MASK | C_MASK;
+            }
+            else
+            {
+                cpu->registers[CPSR] &= ~(V_MASK | C_MASK);
+            }
+            cpu->registers[rd] += imm;
+            if (cpu->registers[rd] == 0)
+            {
+                cpu->registers[CPSR] |= Z_MASK;
+                cpu->registers[CPSR] &= ~N_MASK;
+            }
+            else if (cpu->registers[rd] < 0)
+            {
+                cpu->registers[CPSR] |= N_MASK;
+                cpu->registers[CPSR] &= ~Z_MASK;
+            }
+            break;
+        case 0b11: // SUB
+            if (test_overflow(cpu->registers[rd], -imm))
+            {
+                cpu->registers[CPSR] |= V_MASK | C_MASK;
+            }
+            else
+            {
+                cpu->registers[CPSR] &= ~(V_MASK | C_MASK);
+            }
+            cpu->registers[rd] -= imm;
+            if (cpu->registers[rd] == 0)
+            {
+                cpu->registers[CPSR] |= Z_MASK;
+                cpu->registers[CPSR] &= ~N_MASK;
+            }
+            else if (cpu->registers[rd] < 0)
+            {
+                cpu->registers[CPSR] |= N_MASK;
+                cpu->registers[CPSR] &= ~Z_MASK;
+            }
+            break;
+    }
+}
+
+void thumb_add_sub(struct cpu *cpu, HALF_WORD instruction)
+{
+    enum
+    {
+        OPCODE = 0b11 << 9,
+        RN = 0b111 << 6,
+        NN = 0b111 << 6,
+        RS = 0b111 << 3,
+        RD = 0b111
+    };
+    int rn = instruction & RN;
+    rn >>= 6;
+    rn++;
+    int imm = instruction & NN;
+    imm >>= 6;
+    int rs = instruction & RS;
+    rs >>= 3;
+    rs++;
+    int rd = instruction & RD;
+    rd++;
+    int opcode = instruction & OPCODE;
+    switch(opcode >> 9)
+    {
+        case 0b00: // add reg
+            cpu->registers[rd] = cpu->registers[rn] + cpu->registers[rs];
+            if (test_overflow(cpu->registers[rs], cpu->registers[rn]))
+            {
+                cpu->registers[CPSR] |= V_MASK | C_MASK;
+            }
+            else
+            {
+                cpu->registers[CPSR] &= ~(V_MASK | C_MASK);
+            }
+            break;
+        case 0b01: // sub reg
+            cpu->registers[rd] = cpu->registers[rn] - cpu->registers[rs];
+            if (test_overflow(cpu->registers[rs], -cpu->registers[rn]))
+            {
+                cpu->registers[CPSR] |= V_MASK;
+            }
+            else
+            {
+                cpu->registers[CPSR] &= ~V_MASK;
+            }
+            break;
+        case 0b10: // add imm
+            cpu->registers[rd] = cpu->registers[rn] + imm;
+            if (test_overflow(cpu->registers[rs], imm))
+            {
+                cpu->registers[CPSR] |= V_MASK | C_MASK;
+            }
+            else
+            {
+                cpu->registers[CPSR] &= ~(V_MASK | C_MASK);
+            }
+            break;
+        case 0b11: // sub imm
+            cpu->registers[rd] = cpu->registers[rn] - imm;
+            if (test_overflow(cpu->registers[rs], -imm))
+            {
+                cpu->registers[CPSR] |= V_MASK;
+            }
+            else
+            {
+                cpu->registers[CPSR] &= ~V_MASK;
+            }
+            break;
+    }
+    if (cpu->registers[rd] == 0)
+    {
+        cpu->registers[CPSR] |= Z_MASK;
+        cpu->registers[CPSR] &= ~N_MASK;
+    }
+    else if (cpu->registers[rd])
+    {
+        cpu->registers[CPSR] |= N_MASK;
+        cpu->registers[CPSR] &= ~Z_MASK;
+    }
+}
+
+void thumb_move_shifted_register(struct cpu *cpu, HALF_WORD instruction)
+{
+    enum
+    {
+        OPCODE = 0b11 << 11,
+        OFFSET = 0b11111 << 6,
+        RS = 0b111 << 3,
+        RD = 0b111
+    };
+    int opcode = instruction & OPCODE;
+    int rs = instruction & RS;
+    rs >>= 3;
+    rs++;
+    int rd = instruction & RD;
+    rd++;
+    int offset = instruction & OFFSET;
+    offset >>= 6;
+    cpu->registers[rd] = shift_immediate(cpu, opcode >> 11, cpu->registers[rs], offset);
+    if (cpu->registers[rd] == 0)
+    {
+        cpu->registers[CPSR] |= Z_MASK;
+        cpu->registers[CPSR] &= ~N_MASK;
+    }
+    else if (cpu->registers[rd] < 0)
+    {
+        cpu->registers[CPSR] |= N_MASK;
+        cpu->registers[CPSR] &= ~Z_MASK;
+    }
+}
+
+bool check_condition(struct cpu *cpu, WORD instruction)
+{
+    int cond = (instruction >> 28) & 0xF;
+    switch (cond)
+    {
+    case 0x0: // EQ
+        return cpu->registers[CPSR] & Z_MASK;
+    case 0x1: // NE
+        return !(cpu->registers[CPSR] & Z_MASK);
+    case 0x2: // CS
+        return cpu->registers[CPSR] & C_MASK;
+    case 0x3: // CC
+        return !(cpu->registers[CPSR] & C_MASK);
+    case 0x4: // MI
+        return (cpu->registers[CPSR] & N_MASK);
+    case 0x5: // PL
+        return !(cpu->registers[CPSR] & N_MASK);
+    case 0x6: // VS
+        return (cpu->registers[CPSR] & V_MASK);
+    case 0x7: // VC
+        return !(cpu->registers[CPSR] & V_MASK);
+    case 0x8: // HI
+        return (cpu->registers[CPSR] & C_MASK) && !(cpu->registers[CPSR] & Z_MASK);
+    case 0x9: // LS
+        return !(cpu->registers[CPSR] & C_MASK) || (cpu->registers[CPSR] & Z_MASK);
+    case 0xa: // GE
+        return ((cpu->registers[CPSR] & N_MASK) >> N_POS) == ((cpu->registers[CPSR] & V_MASK) >> V_POS);
+    case 0xb: // LT
+        return ((cpu->registers[CPSR] & N_MASK) >> N_POS) != ((cpu->registers[CPSR] & V_MASK) >> V_POS);
+    case 0xc: // GT
+        return ((cpu->registers[CPSR] & Z_MASK) == 0) && ((cpu->registers[CPSR] & N_MASK) >> N_POS) == ((cpu->registers[CPSR] & V_MASK) >> V_POS);
+    case 0xd: // LE
+        return ((cpu->registers[CPSR] & Z_MASK) != 0) || ((cpu->registers[CPSR] & N_MASK) >> N_POS) != ((cpu->registers[CPSR] & V_MASK) >> V_POS);
+    case 0xe: // AL
+        return true;
+    }
 }

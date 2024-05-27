@@ -215,6 +215,44 @@ void arm_block_data_transfer(struct cpu *cpu, WORD instruction);
 
 void arm_single_data_swap(struct cpu *cpu, WORD instruction);
 
+void thumb_software_interrupt(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_unconditional_branch(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_conditional_branch(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_multiple_load_store(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_long_branch_and_link(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_offset_stackpointer(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_push_pop_registers(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_load_store_halfword(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_sp_relative_load_store(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_load_address(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_load_store_with_offset(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_load_store_with_reg_offset(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_load_store_sign_extended_byte_halfword(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_pc_relative_load(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_hi_reg_operation_branch_exchange(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_alu_operations(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_mov_cmp_add_sub_imm(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_add_sub(struct cpu *cpu, HALF_WORD instruction);
+
+void thumb_move_shifted_register(struct cpu *cpu, HALF_WORD instruction);
+
 void cpu_switch_mode(struct cpu *cpu, enum cpu_mode mode);
 
 void add_request_channel(struct cpu *cpu, struct request_channel channel);
@@ -224,3 +262,5 @@ void remove_request_channel(struct cpu *cpu, struct request_channel channel);
 int shift_immediate(struct cpu *cpu, enum shift_type shift_type, int shift_amount, WORD value);
 
 bool test_overflow(int32_t op1, int32_t op2);
+
+bool check_condition(struct cpu *cpu, WORD instruction);
