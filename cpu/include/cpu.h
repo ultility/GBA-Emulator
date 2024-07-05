@@ -4,10 +4,15 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <math.h>
 
 #include "data_sizes.h"
 #include "instructions.h"
 #include "syscall.h"
+#include "requests.h"
+#ifndef NULL
+    #define NULL 0
+#endif
 
 enum memory_sections_size
 {
@@ -49,28 +54,6 @@ enum shift_type
     ASR,
     ROR,
     RCR
-};
-
-struct request_data
-{
-    enum {input, output} request_type;
-    enum {word, half_word, byte} data_type;
-    uint32_t address;
-    union
-    {
-        WORD word;
-        HALF_WORD half_word;
-        BYTE byte;
-    } data;
-};
-
-struct request_channel
-{
-    const char* name;
-    int id;
-    int memory_address;
-    int memory_range;
-    void (*push_to_channel)(struct request_data*);
 };
 
 enum cpsr_bit_positions
@@ -173,6 +156,18 @@ struct cpu
     int request_channel_capacity;
 };
 
+enum arc_tab_taylor_series
+{
+    Order_1 = 0xA2F9,
+    Order_3 = 0x3651,
+    Order_5 = 0x2081,
+    Order_7 = 0x16AA,
+    Order_9 = 0x0FB6,
+    Order_11 = 0x091C,
+    Order_13 = 0x0390,
+    Order_15 = 0x00A9,
+};
+
 void cpu_init(struct cpu *cpu);
 
 void free_cpu(struct cpu *cpu);
@@ -264,3 +259,11 @@ int shift_immediate(struct cpu *cpu, enum shift_type shift_type, int shift_amoun
 bool test_overflow(int32_t op1, int32_t op2);
 
 bool check_condition(struct cpu *cpu, WORD instruction);
+
+WORD read_word_from_memory(struct cpu *cpu, WORD address);
+
+HALF_WORD read_half_word_from_memory(struct cpu *cpu, WORD address);
+
+void write_word_to_memory(struct cpu *cpu, WORD address, WORD value);
+
+void write_half_word_to_memory(struct cpu *cpu, WORD address, HALF_WORD value);

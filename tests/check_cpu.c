@@ -10,7 +10,7 @@ void setup(void)
 
 void teardown(void)
 {
-    //free_cpu(&cpu);
+    free_cpu(&cpu);
 }
 
 START_TEST(check_overflow)
@@ -27,14 +27,29 @@ START_TEST(check_overflow)
 }
 END_TEST
 
-START_TEST(check_shift)
+START_TEST(check_read_write)
 {
-    // LSL
-    ck_assert_int_eq(shift_immediate(&cpu, LSL, 4, 0xFF), 0xFF0);
-    ck_assert_int_eq(shift_immediate(&cpu, LSL, 32, 0x1), 0x0);
-    // LSR
-    ck_assert_int_eq(shift_immediate(&cpu, LSR, 4, 0xFF), 0xF);
+    // read write word
+    
+    // little endian
+    cpu.registers[CPSR] &= ~E_MASK;
+    write_word_to_memory(&cpu, 0x100, 0x12345678);
+    ck_assert_int_eq(read_word_from_memory(&cpu, 0x100), 0x12345678);
+    // big endian
+    cpu.registers[CPSR] |= E_MASK;
+    write_word_to_memory(&cpu, 0x100, 0x12345678);
+    ck_assert_int_eq(read_word_from_memory(&cpu, 0x100), 0x12345678);
+
+    // read write half word
+    cpu.registers[CPSR] &= ~E_MASK;
+    write_half_word_to_memory(&cpu, 0x100, 0x1234);
+    ck_assert_int_eq(read_half_word_from_memory(&cpu, 0x100), 0x1234);
+    // big endian
+    cpu.registers[CPSR] |= E_MASK;
+    write_half_word_to_memory(&cpu, 0x100, 0x1234);
+    ck_assert_int_eq(read_half_word_from_memory(&cpu, 0x100), 0x1234);
 }
+END_TEST
 
 int main(void)
 {
@@ -43,6 +58,7 @@ int main(void)
     Suite *s = suite_create("CPU");
     TCase *tc_core = tcase_create("Core");
     tcase_add_test(tc_core, check_overflow);
+    tcase_add_test(tc_core, check_read_write);
     suite_add_tcase(s, tc_core);
     sr = srunner_create(s);
 

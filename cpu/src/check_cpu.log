@@ -1,0 +1,3 @@
+Running suite CPU
+/home/ultility/projects/c/GBA-Emulator/tests/check_cpu.c:26:P:Core:check_overflow:0: Passed
+/home/ultility/projects/c/GBA-Emulator/tests/check_cpu.c:50:P:Core:check_read_write:0: Passed

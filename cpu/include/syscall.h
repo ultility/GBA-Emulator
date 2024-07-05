@@ -1,6 +1,59 @@
 #pragma once
+#include "cpu.h"
 
-enum syscall_number
+
+enum gba_syscall_number
+{
+    // basic functions
+    SOFT_RESET = 0x00,
+    REGISTER_RAM_RESET = 0x01,
+    HALF = 0x02,
+    STOP = 0x03,
+    SLEEP = STOP,
+    INTR_WAIT = 0x04,
+    V_BLANK_INTR_WAIT = 0x05,
+    DIV = 0x06,
+    DIV_ARM = 0x07,
+    SQRT = 0x08,
+    ARCTAN = 0x09,
+    ARCTAN2 = 0x0A,
+    CPU_SET = 0x0B,
+    CPU_FAST_SET = 0x0C,
+    GET_BIOS_CHECKSUM = 0x0D,
+    BG_AFFINE_SET = 0x0E,
+    OBJ_AFFINE_SET = 0x0F,
+    // decompression functions
+    BIT_UNPACK = 0x10,
+    LZ77_UNCOMPRESSED_READ_NORMAL_WRITE_8_BIT = 0x11, // Wram
+    LZ77_UNCOMPRESSED_READ_NORMAL_WRITE_16_BIT = 0x12, // Vram
+    HUFF_UNCOMPRESSED_READ_NORMAL = 0x13,
+    RL_UNCOMPRESSED_READ_NORMAL_WRITE_8_BIT = 0x14, // Wram
+    RL_UNCOMPRESSED_READ_NORMAL_WRITE_16_BIT = 0x15, // Vram
+    DIFF_8_BIT_UNFILTERRED_WRITE_8_BIT = 0x16, // Wram
+    DIFF_8_BIT_UNFILTERRED_WRITE_16_BIT = 0x17, // Vram
+    DIFF_16_BIT_UNFILTERRED = 0x18,
+    // sound functions
+    SOUNDS_BIAS = 0x19,
+    SOUND_DRIVER_MODE = 0x1B,
+    SOUND_DRIVER_INIT = 0x1A,
+    SOUND_DRIVER_MAIN = 0x1C,
+    SOUND_DRIVER_VSYNC = 0x1D,
+    SOUND_CHANNEL_CLEAR = 0x1E,
+    MID_I_KEY2_FREQ = 0x1F,
+    SOUND_WHATEVER0 = 0x20,
+    SOUND_WHATEVER1 = 0x21,
+    SOUND_WHATEVER2 = 0x22,
+    SOUND_WHATEVER3 = 0x23,
+    SOUND_WHATEVER4 = 0x24,
+    MULTI_BOOT = 0x25,
+    HARD_RESET = 0x26,
+    CUSTOM_HALT = 0x27,
+    SOUNDD_RIVER_VSYNC_OFF = 0x28,
+    SOUNDD_RIVER_VSYNC_ON = 0x29,
+    SOUND_GET_JUMP_LIST = 0x2A,
+};
+
+enum arm_syscall_number
 {
     RESTART_SYSCALL = 0x0,
     EXIT,
@@ -10,3 +63,5 @@ enum syscall_number
     OPEN,
     CLOSE,
 };
+
+void gba_div(struct cpu *cpu);

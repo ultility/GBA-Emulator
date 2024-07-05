@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="http://check.sourceforge.net/xml/check_unittest.xslt"?>
+<testsuites xmlns="http://check.sourceforge.net/ns">
+  <datetime>2024-06-08 10:51:58</datetime>
+  <suite>
+    <title>CPU</title>
+    <test result="success">
+      <path>/home/ultility/projects/c/GBA-Emulator/tests</path>
+      <fn>check_cpu.c:26</fn>
+      <id>check_overflow</id>
+      <iteration>0</iteration>
+      <duration>0.000019</duration>
+      <description>Core</description>
+      <message>Passed</message>
+    </test>
+    <test result="success">
+      <path>/home/ultility/projects/c/GBA-Emulator/tests</path>
+      <fn>check_cpu.c:50</fn>
+      <id>check_read_write</id>
+      <iteration>0</iteration>
+      <duration>0.000008</duration>
+      <description>Core</description>
+      <message>Passed</message>
+    </test>

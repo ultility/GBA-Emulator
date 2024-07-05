@@ -10,7 +10,8 @@
         "compare": "c",
         "type_traits": "c",
         "elf.h": "c",
-        "libelf.h": "c"
+        "libelf.h": "c",
+        "math.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled",
     "cmake.configureOnOpen": true,

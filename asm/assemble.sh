@@ -1,6 +1,6 @@
 clean=clean
 BASEDIR=$(dirname $0)
-compile_args=""
+compile_args="-g"
 build_args="-march=armv4t -mcpu=arm7tdmi"
 link_args=""
 

@@ -172,23 +172,7 @@ enum arm_instruction_set cpu_decode_arm_instruction(WORD instruction)
 
 WORD cpu_fetch_arm_instruction(struct cpu *cpu)
 {
-    WORD instruction = 0;
-    if ((cpu->registers[CPSR] & E_MASK) == E_MASK)
-    {
-        for (int i = 0; i < 4; i++)
-        {
-            BYTE byte = cpu->memory[cpu->registers[PC] + i];
-            instruction |= byte << (i * 8);
-        }
-    }
-    else
-    {
-        for (int i = 3; i >= 0; i--)
-        {
-            BYTE byte = cpu->memory[cpu->registers[PC] + i];
-            instruction |= byte << (i * 8);
-        }
-    }
+    WORD instruction = read_word_from_memory(cpu, cpu->registers[PC]);
     return instruction;
 }
 
@@ -348,20 +332,7 @@ void arm_single_data_transfer(struct cpu *cpu, WORD instruction)
             }
             else
             {
-                if ((cpu->registers[CPSR] & E_MASK) == E_MASK)
-                {
-                    for (int i = 0; i < 4; i++)
-                    {
-                        value |= cpu->memory[address + i] << (i * 8);
-                    }
-                }
-                else
-                {
-                    for (int i = 4; i > 0; i--)
-                    {
-                        value |= cpu->memory[address + i - 1] << ((i - 1) * 8);
-                    }
-                }
+                value = read_word_from_memory(cpu, address);
             }
             cpu->registers[sd_reg] = value;
         }
@@ -407,22 +378,7 @@ void arm_single_data_transfer(struct cpu *cpu, WORD instruction)
             else
             {
                 value = cpu->registers[sd_reg];
-                if ((cpu->registers[CPSR] & E_MASK) == E_MASK)
-                {
-                    for (int i = 0; i < 4; i++)
-                    {
-                        cpu->memory[address + i] = value & 0xFF;
-                        value >>= 8;
-                    }
-                }
-                else
-                {
-                    for (int i = 4; i > 0; i--)
-                    {
-                        cpu->memory[address + i - 1] = value & 0xFF;
-                        value >>= 8;
-                    }
-                }
+                write_word_to_memory(cpu, address, value);
             }
         }
     }
@@ -812,23 +768,16 @@ bool test_overflow(int32_t op1, int32_t op2)
 
 void arm_software_interrupt(struct cpu *cpu, WORD instruction)
 {
-    enum syscall_number syscall = cpu->registers[R7];
+    enum gba_syscall_number syscall = cpu->registers[R7];
     switch (syscall)
     {
-    case RESTART_SYSCALL:
-        break;
-    case EXIT:
-        exit(cpu->registers[R0]);
-    case FORK:
-        break;
-    case WRITE:
-        break;
-    case READ:
-        break;
-    case OPEN:
-    case CLOSE:
-    default:
-        break;
+        case DIV: // swi 6
+            gba_div(cpu);
+        case DIV_ARM: // swi 7
+            cpu->registers[R0] = cpu->registers[R0] * cpu->registers[R1];
+            cpu->registers[R1] = cpu->registers[R0] / cpu->registers[R1];
+            cpu->registers[R0] = cpu->registers[R0] / cpu->registers[R1];
+            gba_div(cpu);
     }
 }
 
@@ -1236,12 +1185,7 @@ void arm_block_data_transfer(struct cpu *cpu, WORD instruction)
         {
             if (rlist & 0b1)
             {
-                cpu->registers[i] = 0;
-                for (int b = 0; b < sizeof(WORD); b++)
-                {
-                    cpu->registers[i] <<= __CHAR_BIT__;
-                    cpu->registers[i] |= cpu->memory[base + (count * sizeof(WORD)) + b];
-                }
+                cpu->registers[i] = read_word_from_memory(cpu, base + (count * sizeof(WORD)));
                 count++;
             }
         }
@@ -1287,10 +1231,7 @@ void arm_block_data_transfer(struct cpu *cpu, WORD instruction)
         {
             if (rlist & 0b1)
             {
-                for (int b = sizeof(WORD) - 1; b > 0; b--)
-                {
-                    cpu->memory[base + (count * sizeof(WORD)) + b] = cpu->registers[i] & (0xFF << (b * __CHAR_BIT__));
-                }
+                write_word_to_memory(cpu, base + (count * sizeof(WORD)), cpu->registers[i]);
                 count++;
             }
         }
@@ -1338,47 +1279,586 @@ void arm_single_data_swap(struct cpu *cpu, WORD instruction)
     }
     else
     {
-        cpu->registers[rd] = 0;
-        for (int i = 0; i < sizeof(WORD); i++)
+        cpu->registers[rd] = read_word_from_memory(cpu, cpu->registers[rn]);
+        write_word_to_memory(cpu, cpu->registers[rn], rm_value);
+    }
+}
+
+void thumb_software_interrupt(struct cpu *cpu, HALF_WORD instruction)
+{
+}
+
+void thumb_unconditional_branch(struct cpu *cpu, HALF_WORD instruction)
+{
+    enum
+    {
+        NN = 0b11111111111
+    };
+    int nn = (int16_t)(instruction & NN);
+    cpu->registers[PC] += nn << 1;
+}
+
+void thumb_conditional_branch(struct cpu *cpu, HALF_WORD instruction)
+{
+    enum
+    {
+        OPCODE = 0b1111 << 8,
+        NN = 0b11111111
+    };
+    bool branch = false;
+    int opcode = instruction & OPCODE;
+    int nn = (int8_t)(instruction & NN);
+
+    switch (opcode >> 8)
+    {
+    case 0x0: // BEQ
+        branch = cpu->registers[CPSR] & Z_MASK;
+        break;
+    case 0x1: // BNE
+        branch = !(cpu->registers[CPSR] & Z_MASK);
+        break;
+    case 0x2: // BCS
+        branch = cpu->registers[CPSR] & C_MASK;
+        break;
+    case 0x3: // BCC
+        branch = !(cpu->registers[CPSR] & C_MASK);
+        break;
+    case 0x4: // BMI
+        branch = cpu->registers[CPSR] & N_MASK;
+        break;
+    case 0x5: // BPL
+        branch = !(cpu->registers[CPSR] & N_MASK);
+        break;
+    case 0x6: // BVS
+        branch = cpu->registers[CPSR] & V_MASK;
+        break;
+    case 0x7: // BVC
+        branch = !(cpu->registers[CPSR] & V_MASK);
+        break;
+    case 0x8: // BHI
+        branch = cpu->registers[CPSR] & C_MASK && !(cpu->registers[CPSR] & Z_MASK);
+        break;
+    case 0x9: // BLS
+        branch = !(cpu->registers[CPSR] & C_MASK) || (cpu->registers[CPSR] & Z_MASK);
+        break;
+    case 0xa: // BGE
+        branch = ((cpu->registers[CPSR] & N_MASK) == 0) == ((cpu->registers[CPSR] & V_MASK) == 0);
+        break;
+    case 0xb: // BLT
+        branch = ((cpu->registers[CPSR] & N_MASK) == 0) != ((cpu->registers[CPSR] & V_MASK) == 0);
+        break;
+    case 0xc: // BGT
+        branch = ((cpu->registers[CPSR] & Z_MASK) == 0) && ((cpu->registers[CPSR] & N_MASK) == 0) && ((cpu->registers[CPSR] & V_MASK) == 0);
+        break;
+    case 0xd: // BLE
+        branch = ((cpu->registers[CPSR] & Z_MASK) != 0) || ((cpu->registers[CPSR] & N_MASK) != 0) || ((cpu->registers[CPSR] & V_MASK) != 0);
+        break;
+    // 0xe is undefined and 0xf is reserved
+    default:
+        break;
+    }
+    if (branch)
+    {
+        cpu->registers[PC] += nn << 1;
+    }
+}
+
+void thumb_multiple_load_store(struct cpu *cpu, HALF_WORD instruction)
+{
+    enum
+    {
+        OPCODE = 0b1 << 11,
+        RB = 0b111 << 8,
+        RLIST = 0b11111111
+    };
+    int opcode = instruction & OPCODE;
+    int rb = instruction & RB;
+    rb >>= 8;
+    rb++;
+    int rlist = instruction & RLIST;
+    // undefined behaviour of armv4
+    if (rlist == 0)
+    {
+        if (opcode)
         {
-            cpu->registers[rd] <<= 8;
-            cpu->registers[rd] |= cpu->memory[cpu->registers[rn] + i];
-            cpu->memory[cpu->registers[rn] + i] = rm_value << (i * __CHAR_BIT__);
+            // LDM
+            cpu->registers[PC] = read_word_from_memory(cpu, cpu->registers[rb]);
+        }
+        else
+        {
+            // STR
+            write_word_to_memory(cpu, cpu->registers[rb], cpu->registers[PC]);
+        }
+        cpu->registers[rb] += 0x40;
+    }
+    // normal behaviour
+    for (int i = 0; rlist != 0; i++, rlist >>= 1)
+    {
+        if (rlist & 0b1)
+        {
+            if (opcode)
+            {
+                // LDM
+                cpu->registers[i] = read_word_from_memory(cpu, cpu->registers[rb]);
+            }
+            else
+            {
+                // STM
+                write_word_to_memory(cpu, cpu->registers[rb], cpu->registers[i]);
+            }
+            cpu->registers[rb] += sizeof(WORD);
         }
     }
 }
 
-void thumb_software_interrupt(struct cpu *cpu, HALF_WORD instruction);
+void thumb_long_branch_and_link(struct cpu *cpu, HALF_WORD instruction)
+{
+}
 
-void thumb_unconditional_branch(struct cpu *cpu, HALF_WORD instruction);
+void thumb_offset_stackpointer(struct cpu *cpu, HALF_WORD instruction)
+{
+    enum
+    {
+        OPCODE = 0b1 << 7,
+        NN = 0b1111111
+    };
+    int opcode = instruction & OPCODE;
+    int nn = instruction & NN;
+    if (opcode)
+    {
+        // sub
+        cpu->registers[SP] -= nn;
+    }
+    else
+    {
+        // add
+        cpu->registers[SP] += nn;
+    }
+}
 
-void thumb_conditional_branch(struct cpu *cpu, HALF_WORD instruction);
+void thumb_push_pop_registers(struct cpu *cpu, HALF_WORD instruction)
+{
+    enum
+    {
+        OPCODE = 0b1 << 11,
+        PC_LR = 0b1 << 8,
+        RLIST = 0b11111111
+    };
+    int opcode = instruction & OPCODE;
+    int pc_lr = instruction & PC_LR;
+    int rlist = instruction & RLIST;
+    for (int i = R0; rlist != 0; rlist >>= 1, i++)
+    {
+        if (rlist & 0b1)
+        {
+            if (opcode)
+            {
+                // POP
+                cpu->registers[i] = read_word_from_memory(cpu, cpu->registers[SP]);
+                cpu->registers[SP] += sizeof(WORD);
+            }
+            else
+            {
+                // PUSH
+                write_word_to_memory(cpu, cpu->registers[SP], cpu->registers[i]);
+                cpu->registers[SP] -= sizeof(WORD);
+            }
+        }
+    }
+    if (pc_lr)
+    {
+        if (opcode)
+        {
+            // POP PC
+            cpu->registers[PC] = read_word_from_memory(cpu, cpu->registers[SP]);
+            cpu->registers[SP] += sizeof(WORD);
+        }
+        else
+        {
+            // PUSH LR
+            write_word_to_memory(cpu, cpu->registers[SP], cpu->registers[LR]);
+            cpu->registers[SP] -= sizeof(WORD);
+        }
+    }
+}
 
-void thumb_multiple_load_store(struct cpu *cpu, HALF_WORD instruction);
+void thumb_load_store_halfword(struct cpu *cpu, HALF_WORD instruction)
+{
+    enum
+    {
+        OPCODE = 0b1 << 11,
+        NN = 0b11111 << 6,
+        RB = 0b1111 << 3,
+        RD = 0b111
+    };
+    int opcode = instruction & OPCODE;
+    int nn = instruction & NN;
+    nn >>= 6;
+    int rb = instruction & RB;
+    rb >>= 3;
+    rb++;
+    int rd = instruction & RD;
+    rd++;
+    if (opcode)
+    {
+        // LDRH
+        cpu->registers[rd] = 0 | read_half_word_from_memory(cpu, cpu->registers[rb] + nn);
+    }
+    else
+    {
+        // STRH
+        write_half_word_to_memory(cpu, cpu->registers[rb] + nn, cpu->registers[rd]);
+    }
+}
 
-void thumb_long_branch_and_link(struct cpu *cpu, HALF_WORD instruction);
+void thumb_sp_relative_load_store(struct cpu *cpu, HALF_WORD instruction)
+{
+    enum
+    {
+        OPCODE = 0b1 << 11,
+        RD = 0b1111 << 8,
+        NN = 0b11111111
+    };
+    int opcode = instruction & OPCODE;
+    int rd = instruction & RD;
+    rd >>= 8;
+    rd++;
+    int nn = instruction & NN;
 
-void thumb_offset_stackpointer(struct cpu *cpu, HALF_WORD instruction);
+    if (opcode)
+    {
+        // LDR
+        cpu->registers[rd] = read_word_from_memory(cpu, cpu->registers[SP] + nn);
+    }
+    else
+    {
+        // STR
+        write_word_to_memory(cpu, cpu->registers[SP] + nn, cpu->registers[rd]);
+    }
+}
 
-void thumb_push_pop_registers(struct cpu *cpu, HALF_WORD instruction);
+void thumb_load_address(struct cpu *cpu, HALF_WORD instruction)
+{
+}
 
-void thumb_load_store_halfword(struct cpu *cpu, HALF_WORD instruction);
+void thumb_load_store_with_offset(struct cpu *cpu, HALF_WORD instruction)
+{
+    enum
+    {
+        OPCODE = 0b11 << 11,
+        NN = 0b11111 << 6,
+        RB = 0b111 << 3,
+        RD = 0b111
+    };
+    int opcode = instruction & OPCODE;
+    int nn = instruction & NN;
+    nn >>= 6;
+    int rb = instruction & RB;
+    rb >>= 3;
+    rb++;
+    int rd = instruction & RD;
+    rd++;
+    switch (opcode >> 11)
+    {
+    case 0b00: // STR
+        write_word_to_memory(cpu, cpu->registers[rb] + nn, cpu->registers[rd]);
+        break;
+    case 0b01: // LDR
+        cpu->registers[rd] = read_word_from_memory(cpu, cpu->registers[rb] + nn);
+        break;
+    case 0b10: // STRB
+        cpu->memory[cpu->registers[rb] + nn] = cpu->registers[rd] & 0xFF;
+        break;
+    case 0b11: // LDRB
+        cpu->registers[rd] = 0 | cpu->memory[cpu->registers[rb] + nn];
+        break;
+    }
+}
 
-void thumb_sp_relative_load_store(struct cpu *cpu, HALF_WORD instruction);
+void thumb_load_store_with_reg_offset(struct cpu *cpu, HALF_WORD instruction)
+{
+    enum
+    {
+        OPCODE = 0b11 << 10,
+        RO = 0b111 << 6,
+        RB = 0b111 << 3,
+        RD = 0b111
+    };
+    int opcode = instruction & OPCODE;
+    opcode >>= 10;
+    int ro = instruction & RO;
+    ro >>= 6;
+    ro++;
+    int rb = instruction & RB;
+    rb >>= 3;
+    rb++;
+    int rd = instruction & RD;
+    rd++;
+    switch (opcode)
+    {
+    case 0b00: // STR
+        write_word_to_memory(cpu, cpu->registers[rb] + cpu->registers[ro], cpu->registers[rd]);
+        break;
+    case 0b01: // STRB
+        cpu->memory[cpu->registers[rb] + cpu->registers[ro]] = cpu->registers[rd] & 0xFF;
+        break;
+    case 0b10: // LDR
+        cpu->registers[rd] = read_word_from_memory(cpu, cpu->registers[rb] + cpu->registers[ro]);
+        break;
+    case 0b11: // LDRB
+        cpu->registers[rd] = 0 | cpu->memory[cpu->registers[rb] + cpu->registers[ro]];
+        break;
+    }
+}
 
-void thumb_load_address(struct cpu *cpu, HALF_WORD instruction);
+void thumb_load_store_sign_extended_byte_halfword(struct cpu *cpu, HALF_WORD instruction)
+{
+    enum
+    {
+        OPCODE = 0b11 << 10,
+        RO = 0b111 << 6,
+        RB = 0b111 << 3,
+        RD = 0b111
+    };
+    int opcode = instruction & OPCODE;
+    int ro = instruction & RO;
+    ro >>= 6;
+    ro++;
+    int rb = instruction & RB;
+    rb >>= 3;
+    rb++;
+    int rd = instruction & RD;
+    rd++;
+    switch (opcode >> 10)
+    {
+    case 0b00: // STRH
+        write_half_word_to_memory(cpu, cpu->registers[rb] + cpu->registers[ro], cpu->registers[rd]);
+        break;
+    case 0b01: // LDSB
+        cpu->registers[rd] = cpu->memory[cpu->registers[rb] + cpu->registers[ro]] & 0xFF;
+        if (cpu->registers[rd] & (0b1 << 7))
+        {
+            cpu->registers[rd] |= (UINT32_MAX << 8);
+        }
+        break;
+    case 0b10: // LDRH
+        cpu->registers[rd] = read_half_word_from_memory(cpu, cpu->registers[rb] + cpu->registers[ro]);
+        break;
+    case 0b11: // LDSH
+        cpu->registers[rd] = read_half_word_from_memory(cpu, cpu->registers[rb] + cpu->registers[ro]);
+        if (cpu->registers[rd] & (0b1 << 15))
+        {
+            cpu->registers[rd] |= (UINT32_MAX << 16);
+        }
+        break;
+    }
+}
 
-void thumb_load_store_with_offset(struct cpu *cpu, HALF_WORD instruction);
+void thumb_pc_relative_load(struct cpu *cpu, HALF_WORD instruction)
+{
+    enum
+    {
+        RD = 0b111 << 8,
+        NN = 0b11111111
+    };
+    int rd = instruction & RD;
+    rd >>= 8;
+    rd++;
+    int nn = instruction & NN;
+    cpu->registers[rd] = read_word_from_memory(cpu, cpu->registers[PC] + nn);
+}
 
-void thumb_load_store_with_reg_offset(struct cpu *cpu, HALF_WORD instruction);
+void thumb_hi_reg_operation_branch_exchange(struct cpu *cpu, HALF_WORD instruction)
+{
+    enum
+    {
+        OPCODE = 0b11 << 8,
+        MSBD = 0b1 << 7,
+        MSBS = 0b1 << 6,
+        RS = 0b111 << 3,
+        RD = 0b111
+    };
+    int opcode = instruction & OPCODE;
+    int rs = instruction & MSBS;
+    rs |= instruction & RS;
+    rs >>= 3;
+    rs++;
+    if (rs > 0xF)
+    {
+        rs = PC;
+    }
+    int rd = instruction & MSBS;
+    rd >>= 4;
+    rd |= instruction & RD;
+    rd++;
+    if (rd > 0xF)
+    {
+        rd = PC;
+    }
+    switch (opcode >> 8)
+    {
+    case 0b00: // ADD
+        cpu->registers[rd] += cpu->registers[rs];
+        break;
+    case 0b01: // CMP
+        int result = cpu->registers[rd] - cpu->registers[rs];
+        if (result == 0)
+        {
+            cpu->registers[CPSR] |= Z_MASK;
+            cpu->registers[CPSR] &= ~N_MASK;
+        }
+        else if (result < 0)
+        {
+            cpu->registers[CPSR] &= ~Z_MASK;
+            cpu->registers[CPSR] |= N_MASK;
+        }
+        break;
+    case 0b10: // MOV
+        cpu->registers[rd] = cpu->registers[rs];
+        break;
+    case 0b11: // BX
+        cpu->registers[PC] = cpu->registers[rs];
+        cpu->registers[CPSR] &= ~T_MASK;
+        break;
+    }
+}
 
-void thumb_load_store_sign_extended_byte_halfword(struct cpu *cpu, HALF_WORD instruction);
-
-void thumb_pc_relative_load(struct cpu *cpu, HALF_WORD instruction);
-
-void thumb_hi_reg_operation_branch_exchange(struct cpu *cpu, HALF_WORD instruction);
-
-void thumb_alu_operations(struct cpu *cpu, HALF_WORD instruction);
+void thumb_alu_operations(struct cpu *cpu, HALF_WORD instruction)
+{
+    enum
+    {
+        OPCODE = 0b1111 << 6,
+        RS = 0b111 << 3,
+        RD = 0b111
+    };
+    int opcode = instruction & OPCODE;
+    int rs = instruction & RS;
+    rs >>= 3;
+    rs++;
+    int rd = instruction & RD;
+    rd++;
+    /*     0: AND{S} Rd,Rs     ;AND logical       Rd = Rd AND Rs
+           1: EOR{S} Rd,Rs     ;XOR logical       Rd = Rd XOR Rs
+           2: LSL{S} Rd,Rs     ;log. shift left   Rd = Rd << (Rs AND 0FFh)
+           3: LSR{S} Rd,Rs     ;log. shift right  Rd = Rd >> (Rs AND 0FFh)
+           4: ASR{S} Rd,Rs     ;arit shift right  Rd = Rd SAR (Rs AND 0FFh)
+           5: ADC{S} Rd,Rs     ;add with carry    Rd = Rd + Rs + Cy
+           6: SBC{S} Rd,Rs     ;sub with carry    Rd = Rd - Rs - NOT Cy
+           7: ROR{S} Rd,Rs     ;rotate right      Rd = Rd ROR (Rs AND 0FFh)
+           8: TST    Rd,Rs     ;test            Void = Rd AND Rs
+           9: NEG{S} Rd,Rs     ;negate            Rd = 0 - Rs
+           A: CMP    Rd,Rs     ;compare         Void = Rd - Rs
+           B: CMN    Rd,Rs     ;neg.compare     Void = Rd + Rs
+           C: ORR{S} Rd,Rs     ;OR logical        Rd = Rd OR Rs
+           D: MUL{S} Rd,Rs     ;multiply          Rd = Rd * Rs
+           E: BIC{S} Rd,Rs     ;bit clear         Rd = Rd AND NOT Rs
+           F: MVN{S}*/
+    int result = 0;
+    switch (opcode >> 6)
+    {
+    case 0b0000: // AND
+        cpu->registers[rd] &= cpu->registers[rs];
+        result = cpu->registers[rd];
+        break;
+    case 0b0001: // EOR
+        cpu->registers[rd] ^= cpu->registers[rs];
+        result = cpu->registers[rd];
+        break;
+    case 0b0010: // LSL
+        cpu->registers[rd] = shift_immediate(cpu, LSL, cpu->registers[rs], cpu->registers[rd]);
+        result = cpu->registers[rd];
+        break;
+    case 0b0011: // LSR
+        cpu->registers[rd] = shift_immediate(cpu, LSR, cpu->registers[rs], cpu->registers[rd]);
+        result = cpu->registers[rd];
+        break;
+    case 0b0100: // ASR
+        cpu->registers[rd] = shift_immediate(cpu, ASR, cpu->registers[rs], cpu->registers[rd]);
+        result = cpu->registers[rd];
+        break;
+    case 0b0101: // ADC
+        if (cpu->registers[CPSR] & C_MASK)
+        {
+            cpu->registers[rd]++;
+        }
+        if (test_overflow(cpu->registers[rd], cpu->registers[rs]))
+        {
+            cpu->registers[CPSR] |= V_MASK | C_MASK;
+        }
+        else
+        {
+            cpu->registers[CPSR] &= ~(V_MASK | C_MASK);
+        }
+        cpu->registers[rd] += cpu->registers[rs];
+        result = cpu->registers[rd];
+        break;
+    case 0b0110: // SBC
+        if (cpu->registers[CPSR] & C_MASK)
+        {
+            cpu->registers[rd]--;
+        }
+        else
+        {
+            cpu->registers[rd]++;
+        }
+        cpu->registers[CPSR] &= ~C_MASK;
+        if (test_overflow(cpu->registers[rd], -cpu->registers[rs]))
+        {
+            cpu->registers[CPSR] |= V_MASK;
+        }
+        else
+        {
+            cpu->registers[CPSR] &= ~V_MASK;
+        }
+        result = cpu->registers[rd];
+        break;
+    case 0b0111: // ROR
+        cpu->registers[rd] = (cpu->registers[rd] >> cpu->registers[rs]) | (cpu->registers[rd] << (sizeof(WORD) * __CHAR_BIT__ - cpu->registers[rs]));
+        result = cpu->registers[rd];
+        break;
+    case 0b1000: // TST
+        cpu->registers[CPSR] &= ~(N_MASK | Z_MASK);
+        result = cpu->registers[rd] & cpu->registers[rs];
+        break;
+    case 0b1001: // NEG
+        cpu->registers[rd] = 0 - cpu->registers[rs];
+        result = cpu->registers[rd];
+        break;
+    case 0b1010: // CMP
+        result = cpu->registers[rd] - cpu->registers[rs];
+        break;
+    case 0b1011: // CMN
+        result = cpu->registers[rd] + cpu->registers[rs];
+        break;
+    case 0b1100: // ORR
+        cpu->registers[rd] |= cpu->registers[rs];
+        result = cpu->registers[rd];
+        break;
+    case 0b1101: // MUL
+        cpu->registers[rd] *= cpu->registers[rs];
+        result = cpu->registers[rd];
+        cpu->registers[CPSR] &= ~C_MASK;
+        break;
+    case 0b1110: // BIC
+        cpu->registers[rd] &= ~cpu->registers[rs];
+        result = cpu->registers[rd];
+        break;
+    case 0b1111: // MVN
+        cpu->registers[rd] = ~cpu->registers[rs];
+        result = cpu->registers[rd];
+        break;
+    }
+    if (result == 0)
+    {
+        cpu->registers[CPSR] |= Z_MASK;
+        cpu->registers[CPSR] &= ~N_MASK;
+    }
+    else if (result < 0)
+    {
+        cpu->registers[CPSR] |= N_MASK;
+        cpu->registers[CPSR] &= ~Z_MASK;
+    }
+}
 
 void thumb_mov_cmp_add_sub_imm(struct cpu *cpu, HALF_WORD instruction)
 {
@@ -1394,84 +1874,84 @@ void thumb_mov_cmp_add_sub_imm(struct cpu *cpu, HALF_WORD instruction)
     rd >>= 8;
     rd++;
     int imm = instruction & NN;
-    switch(opcode)
+    switch (opcode)
     {
-        case 0b00: // MOV
-            cpu->registers[rd] = imm;
-            if (imm == 0)
-            {
-                cpu->registers[CPSR] |= Z_MASK;
-                cpu->registers[CPSR] &= ~N_MASK;
-            }
-            else if (imm < 0)
-            {
-                cpu->registers[CPSR] |= N_MASK;
-                cpu->registers[CPSR] &= ~Z_MASK;
-            }
-            break;
-        case 0b01: // CMP
-            int result = cpu->registers[rd] - imm;
-            cpu->registers[CPSR] &= ~C_MASK;
-            if (test_overflow(cpu->registers[rd], -imm))
-            {
-                cpu->registers[CPSR] |= V_MASK;
-            }
-            else
-            {
-                cpu->registers[CPSR] &= ~V_MASK;
-            }
-            if (result == 0)
-            {
-                cpu->registers[CPSR] |= Z_MASK;
-                cpu->registers[CPSR] &= ~N_MASK;
-            }
-            else if (result < 0)
-            {
-                cpu->registers[CPSR] |= N_MASK;
-                cpu->registers[CPSR] &= ~Z_MASK;
-            }
-        case 0b10: // ADD
-            if (test_overflow(cpu->registers[rd], imm))
-            {
-                cpu->registers[CPSR] |= V_MASK | C_MASK;
-            }
-            else
-            {
-                cpu->registers[CPSR] &= ~(V_MASK | C_MASK);
-            }
-            cpu->registers[rd] += imm;
-            if (cpu->registers[rd] == 0)
-            {
-                cpu->registers[CPSR] |= Z_MASK;
-                cpu->registers[CPSR] &= ~N_MASK;
-            }
-            else if (cpu->registers[rd] < 0)
-            {
-                cpu->registers[CPSR] |= N_MASK;
-                cpu->registers[CPSR] &= ~Z_MASK;
-            }
-            break;
-        case 0b11: // SUB
-            if (test_overflow(cpu->registers[rd], -imm))
-            {
-                cpu->registers[CPSR] |= V_MASK | C_MASK;
-            }
-            else
-            {
-                cpu->registers[CPSR] &= ~(V_MASK | C_MASK);
-            }
-            cpu->registers[rd] -= imm;
-            if (cpu->registers[rd] == 0)
-            {
-                cpu->registers[CPSR] |= Z_MASK;
-                cpu->registers[CPSR] &= ~N_MASK;
-            }
-            else if (cpu->registers[rd] < 0)
-            {
-                cpu->registers[CPSR] |= N_MASK;
-                cpu->registers[CPSR] &= ~Z_MASK;
-            }
-            break;
+    case 0b00: // MOV
+        cpu->registers[rd] = imm;
+        if (imm == 0)
+        {
+            cpu->registers[CPSR] |= Z_MASK;
+            cpu->registers[CPSR] &= ~N_MASK;
+        }
+        else if (imm < 0)
+        {
+            cpu->registers[CPSR] |= N_MASK;
+            cpu->registers[CPSR] &= ~Z_MASK;
+        }
+        break;
+    case 0b01: // CMP
+        int result = cpu->registers[rd] - imm;
+        cpu->registers[CPSR] &= ~C_MASK;
+        if (test_overflow(cpu->registers[rd], -imm))
+        {
+            cpu->registers[CPSR] |= V_MASK;
+        }
+        else
+        {
+            cpu->registers[CPSR] &= ~V_MASK;
+        }
+        if (result == 0)
+        {
+            cpu->registers[CPSR] |= Z_MASK;
+            cpu->registers[CPSR] &= ~N_MASK;
+        }
+        else if (result < 0)
+        {
+            cpu->registers[CPSR] |= N_MASK;
+            cpu->registers[CPSR] &= ~Z_MASK;
+        }
+    case 0b10: // ADD
+        if (test_overflow(cpu->registers[rd], imm))
+        {
+            cpu->registers[CPSR] |= V_MASK | C_MASK;
+        }
+        else
+        {
+            cpu->registers[CPSR] &= ~(V_MASK | C_MASK);
+        }
+        cpu->registers[rd] += imm;
+        if (cpu->registers[rd] == 0)
+        {
+            cpu->registers[CPSR] |= Z_MASK;
+            cpu->registers[CPSR] &= ~N_MASK;
+        }
+        else if (cpu->registers[rd] < 0)
+        {
+            cpu->registers[CPSR] |= N_MASK;
+            cpu->registers[CPSR] &= ~Z_MASK;
+        }
+        break;
+    case 0b11: // SUB
+        if (test_overflow(cpu->registers[rd], -imm))
+        {
+            cpu->registers[CPSR] |= V_MASK | C_MASK;
+        }
+        else
+        {
+            cpu->registers[CPSR] &= ~(V_MASK | C_MASK);
+        }
+        cpu->registers[rd] -= imm;
+        if (cpu->registers[rd] == 0)
+        {
+            cpu->registers[CPSR] |= Z_MASK;
+            cpu->registers[CPSR] &= ~N_MASK;
+        }
+        else if (cpu->registers[rd] < 0)
+        {
+            cpu->registers[CPSR] |= N_MASK;
+            cpu->registers[CPSR] &= ~Z_MASK;
+        }
+        break;
     }
 }
 
@@ -1496,52 +1976,52 @@ void thumb_add_sub(struct cpu *cpu, HALF_WORD instruction)
     int rd = instruction & RD;
     rd++;
     int opcode = instruction & OPCODE;
-    switch(opcode >> 9)
+    switch (opcode >> 9)
     {
-        case 0b00: // add reg
-            cpu->registers[rd] = cpu->registers[rn] + cpu->registers[rs];
-            if (test_overflow(cpu->registers[rs], cpu->registers[rn]))
-            {
-                cpu->registers[CPSR] |= V_MASK | C_MASK;
-            }
-            else
-            {
-                cpu->registers[CPSR] &= ~(V_MASK | C_MASK);
-            }
-            break;
-        case 0b01: // sub reg
-            cpu->registers[rd] = cpu->registers[rn] - cpu->registers[rs];
-            if (test_overflow(cpu->registers[rs], -cpu->registers[rn]))
-            {
-                cpu->registers[CPSR] |= V_MASK;
-            }
-            else
-            {
-                cpu->registers[CPSR] &= ~V_MASK;
-            }
-            break;
-        case 0b10: // add imm
-            cpu->registers[rd] = cpu->registers[rn] + imm;
-            if (test_overflow(cpu->registers[rs], imm))
-            {
-                cpu->registers[CPSR] |= V_MASK | C_MASK;
-            }
-            else
-            {
-                cpu->registers[CPSR] &= ~(V_MASK | C_MASK);
-            }
-            break;
-        case 0b11: // sub imm
-            cpu->registers[rd] = cpu->registers[rn] - imm;
-            if (test_overflow(cpu->registers[rs], -imm))
-            {
-                cpu->registers[CPSR] |= V_MASK;
-            }
-            else
-            {
-                cpu->registers[CPSR] &= ~V_MASK;
-            }
-            break;
+    case 0b00: // add reg
+        cpu->registers[rd] = cpu->registers[rn] + cpu->registers[rs];
+        if (test_overflow(cpu->registers[rs], cpu->registers[rn]))
+        {
+            cpu->registers[CPSR] |= V_MASK | C_MASK;
+        }
+        else
+        {
+            cpu->registers[CPSR] &= ~(V_MASK | C_MASK);
+        }
+        break;
+    case 0b01: // sub reg
+        cpu->registers[rd] = cpu->registers[rn] - cpu->registers[rs];
+        if (test_overflow(cpu->registers[rs], -cpu->registers[rn]))
+        {
+            cpu->registers[CPSR] |= V_MASK;
+        }
+        else
+        {
+            cpu->registers[CPSR] &= ~V_MASK;
+        }
+        break;
+    case 0b10: // add imm
+        cpu->registers[rd] = cpu->registers[rn] + imm;
+        if (test_overflow(cpu->registers[rs], imm))
+        {
+            cpu->registers[CPSR] |= V_MASK | C_MASK;
+        }
+        else
+        {
+            cpu->registers[CPSR] &= ~(V_MASK | C_MASK);
+        }
+        break;
+    case 0b11: // sub imm
+        cpu->registers[rd] = cpu->registers[rn] - imm;
+        if (test_overflow(cpu->registers[rs], -imm))
+        {
+            cpu->registers[CPSR] |= V_MASK;
+        }
+        else
+        {
+            cpu->registers[CPSR] &= ~V_MASK;
+        }
+        break;
     }
     if (cpu->registers[rd] == 0)
     {
@@ -1620,5 +2100,73 @@ bool check_condition(struct cpu *cpu, WORD instruction)
         return ((cpu->registers[CPSR] & Z_MASK) != 0) || ((cpu->registers[CPSR] & N_MASK) >> N_POS) != ((cpu->registers[CPSR] & V_MASK) >> V_POS);
     case 0xe: // AL
         return true;
+    }
+}
+
+WORD read_word_from_memory(struct cpu *cpu, WORD address)
+{
+    WORD word = 0;
+    for (int i = 0; i < sizeof(word); i++)
+    {
+        if (cpu->registers[CPSR] & E_MASK)
+        {
+            word <<= 8;
+            word |= cpu->memory[address - i + sizeof(word) - 1];
+        }
+        else
+        {
+            word <<= 8;
+            word |= cpu->memory[address + i];
+        }
+    }
+    return word;
+}
+
+HALF_WORD read_half_word_from_memory(struct cpu *cpu, WORD address)
+{
+    HALF_WORD half_word = 0;
+    for (int i = 0; i < sizeof(half_word); i++)
+    {
+        if (cpu->registers[CPSR] & E_MASK)
+        {
+            half_word <<= 8;
+            half_word |= cpu->memory[address - i + sizeof(half_word) - 1];
+        }
+        else
+        {
+            half_word <<= 8;
+            half_word |= cpu->memory[address + i];
+        }
+    }
+    return half_word;
+}
+
+void write_word_to_memory(struct cpu *cpu, WORD address, WORD value)
+{
+    for (int i = 0; i < sizeof(value); i++)
+    {
+        if (cpu->registers[CPSR] & E_MASK)
+        {
+            cpu->memory[address + i] = (value >> (i * 8)) & 0xFF;
+        }
+        else
+        {
+            cpu->memory[address + i] = (value >> ((sizeof(value) - 1 - i) * 8)) & 0xFF;
+        }
+    }
+}
+
+void write_half_word_to_memory(struct cpu *cpu, WORD address, HALF_WORD value)
+{
+    for (int i = 0; i < sizeof(value); i++)
+    {
+        if (cpu->registers[CPSR] & E_MASK)
+        {
+            cpu->memory[address + i] = (value >> (i * 8)) & 0xFF;
+        }
+        else
+        {
+            cpu->memory[address + i] = (value >> ((sizeof(value) - 1 - i) * 8)) & 0xFF;
+        }
     }
 }
