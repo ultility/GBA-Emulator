@@ -1,0 +1,1 @@
+/usr/bin/cc -g "CMakeFiles/GBA-Emulator.dir/main.c.o" -o GBA-Emulator  ../display/src/libLibDisplay.a ../cpu/src/libLibCpu.a /usr/lib/x86_64-linux-gnu/libSDL2_ttf.so /usr/lib/x86_64-linux-gnu/libelf.so /usr/lib/x86_64-linux-gnu/libSDL2.so -lm 

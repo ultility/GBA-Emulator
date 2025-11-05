@@ -6,12 +6,11 @@ int main(int argc, char *argv[])
     {
         SDL_Log("Failed to initialize SDL, %s", SDL_GetError());
         exit(-1);
-    }
-    bool run = true;    
+    }    
     TTF_Init();
     struct display emulator;
     init_display(&emulator, 640, 480, "Gameboy Advance");
-    struct display debug;
+    //struct display debug;
     //init_display(&debug, 100, 800, "DEBUG");
     struct cpu cpu;
     cpu_init(&cpu);
@@ -21,7 +20,7 @@ int main(int argc, char *argv[])
     channel.memory_address = VIRTUAL_PALLETTE_RAM;
     channel.memory_range = 0x06017FFF - 0x06000000;
     void func(struct request_data * data)
-    { // error can be ignored this syntax is for the gcc nested function declaration
+    { // error can be ignored this syntax is for the gcc nested function declaration, will compile
         if (data->request_type == input)
         {
             data->data_type = word;
@@ -34,7 +33,7 @@ int main(int argc, char *argv[])
     }
     channel.push_to_channel = func;
     add_request_channel(&cpu, channel);
-    while (run)
+    while (cpu.isOn)
     {
         if (SDL_GetTicks() - emulator.last_update > (SECOND / MAX_FPS))
         {
@@ -68,7 +67,7 @@ int main(int argc, char *argv[])
         }
     }
     destory_display(&emulator);
-    destory_display(&debug);
+    //destory_display(&debug);
     free_cpu(&cpu);
     SDL_Quit();
     return 0;

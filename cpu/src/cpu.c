@@ -9,6 +9,8 @@ void cpu_init(struct cpu *cpu)
     cpu->registers[SP] = STACK_START;
     cpu->request_channel_capacity = 0;
     cpu->request_channel_count = 0;
+    cpu->registers[CPSR] |= E_MASK;
+    cpu->isOn = true;
 }
 
 void free_cpu(struct cpu *cpu)
@@ -147,6 +149,10 @@ enum arm_instruction_set cpu_decode_arm_instruction(WORD instruction)
     {
         return SINGLE_DATA_SWAP;
     }
+    if ((instruction & PSR_TRANSFER_OPCODE_MASK) == PSR_TRANSFER_OPCODE)
+    {
+        return PSR_TRANSFER;
+    }
     if ((instruction & MULTIPLY_OPCODE_MASK) == MULTIPLY_OPCODE)
     {
         if (((instruction & (0b1001 << 4)) == (0b1001 << 4)) ||
@@ -158,10 +164,6 @@ enum arm_instruction_set cpu_decode_arm_instruction(WORD instruction)
     if ((instruction & HDS_DATA_TRANSFER_OPCODE_MASK) == HDS_DATA_TRANSFER_OPCODE)
     {
         return HDS_DATA_TRANSFER;
-    }
-    if ((instruction & PSR_TRANSFER_OPCODE_MASK) == PSR_TRANSFER_OPCODE)
-    {
-        return PSR_TRANSFER;
     }
     if ((instruction & DATA_PROCESSING_OPCODE_MASK) == DATA_PROCESSING_OPCODE)
     {
@@ -493,6 +495,10 @@ void arm_data_processing(struct cpu *cpu, WORD instruction)
     int32_t rn = (instruction & Rn) >> 16;
     int32_t rd = (instruction & Rd) >> 12;
     int op2 = 0;
+    if (opcode >> 21 >= 0x8 && opcode >> 21 <= 0xB && !s) { // if TEQ, TST, CMP, CMN and S bit is 0 move to PSR
+        arm_psr_transfer(cpu, instruction);
+        return;
+    }
     if (rd == 0xF)
     {
         rd = PC;
@@ -509,11 +515,33 @@ void arm_data_processing(struct cpu *cpu, WORD instruction)
     {
         rn++;
     }
+    switch (cpu->registers[CPSR] & MODE_MASK) {
+        case USER: // uses regular registers
+            break;
+        case SYS: // uses SPSR_SYS and SP_SYS
+            updated_cpsr = cpu->registers[SPSR_SYS];
+            break;
+        case UND:
+            updated_cpsr = cpu->registers[SPSR_UND];
+            break;
+        case SVC:
+            updated_cpsr = cpu->registers[SPSR_SVC];
+            break;
+        case IRQ:
+            updated_cpsr = cpu->registers[SPSR_IRQ];
+            break;
+        case FIQ:
+            updated_cpsr = cpu->registers[SPSR_FIQ];
+            break;
+        case ABT:
+
+            break;
+    }
     int op1 = cpu->registers[rn];
     if ((instruction & I) == I)
     {
         int shift_amount = instruction & ISI;
-        shift_amount >>= 8;
+        shift_amount >>= 7;
         op2 = instruction & nn;
         op2 = shift_immediate(cpu, ROR, shift_amount, op2);
     }
@@ -649,7 +677,7 @@ void arm_data_processing(struct cpu *cpu, WORD instruction)
         cpu->registers[rd] = ~op2;
         break;
     }
-    if (instruction & S)
+    if (s)
     {
         if ((int32_t)cpu->registers[rd] < 0)
         {
@@ -771,13 +799,63 @@ void arm_software_interrupt(struct cpu *cpu, WORD instruction)
     enum gba_syscall_number syscall = cpu->registers[R7];
     switch (syscall)
     {
-        case DIV: // swi 6
-            gba_div(cpu);
+        case EXIT:
+            cpu->isOn = false;
+            break;
         case DIV_ARM: // swi 7
             cpu->registers[R0] = cpu->registers[R0] * cpu->registers[R1];
             cpu->registers[R1] = cpu->registers[R0] / cpu->registers[R1];
             cpu->registers[R0] = cpu->registers[R0] / cpu->registers[R1];
-            gba_div(cpu);
+        case DIV: // swi 6
+            int result = cpu->registers[R0] / cpu->registers[R1];
+            cpu->registers[R3] = cpu->registers[R0] - (cpu->registers[R1] * result);
+            cpu->registers[R0] = result;
+            cpu->registers[R0] = result & INT32_MAX;
+            break;
+        case SQRT: // swi 8
+            int correction = 0;
+            while(!(cpu->registers[R0] & (0b11 << 30)))
+            {
+                cpu->registers[R0] <<= 2;
+                correction++;
+            }
+            cpu->registers[R0] = (uint32_t)(cpu->registers[R0]);
+            cpu->registers[R0] >>= correction;
+            break;
+        case ARCTAN: // swi 9
+            cpu->registers[R0] = (uint32_t)(atan((int32_t)cpu->registers[R0] & UINT16_MAX));
+            break;
+        case ARCTAN2: // swi 10
+            int x = cpu->registers[R0];
+            int y = cpu->registers[R1];
+            if (x >= 0)
+            {
+                cpu->registers[R0] = (uint32_t)(atan(y/x));
+            }
+            else
+            {
+                cpu->registers[R0] = (uint32_t)(M_PI - atan(abs(y/x)));
+                if (y < 0)
+                {
+                    cpu->registers[R0] *= -1;
+                }
+            }
+            break;
+        case BG_AFFINE_SET:
+            int offset = 0;
+            int32_t og_x = read_word_from_memory(cpu, cpu->registers[R0]);
+            offset += sizeof(og_x);
+            int32_t og_y = read_word_from_memory(cpu, cpu->registers[R0] + offset);
+            offset += sizeof(og_y);
+            int16_t camera_x = read_half_word_from_memory(cpu, cpu->registers[R0] + offset);
+            offset += sizeof(camera_x);
+            int16_t camera_y = read_half_word_from_memory(cpu, cpu->registers[R0] + offset);
+            offset += sizeof(camera_y);
+            int16_t scale_x = read_half_word_from_memory(cpu, cpu->registers[R0] + offset);
+            offset += sizeof(scale_x);
+            int16_t scale_y = read_half_word_from_memory(cpu, cpu->registers[R0] + offset);
+            offset += sizeof(scale_y);
+            uint16_t rotation = read_half_word_from_memory(cpu, cpu->registers[R0] + offset);
     }
 }
 
@@ -1004,29 +1082,29 @@ void arm_psr_transfer(struct cpu *cpu, WORD instruction)
         if (instruction & F)
         {
             cpu->registers[dst] &= 0x00FFFFFF;
-            cpu->registers[dst] |= op;
+            cpu->registers[dst] |= op << CPSR_FLAGS;
         }
         else if (instruction & S)
         {
             cpu->registers[dst] &= 0xFF00FFFF;
-            cpu->registers[dst] |= op;
+            cpu->registers[dst] |= op << CPSR_STATUS;
         }
         else if (instruction & X)
         {
             cpu->registers[dst] &= 0xFFFF00FF;
-            cpu->registers[dst] |= op;
+            cpu->registers[dst] |= op << CPSR_EXTENTION;
         }
         else if (instruction & C)
         {
             cpu->registers[dst] &= 0xFFFFFF00;
-            cpu->registers[dst] |= op;
+            cpu->registers[dst] |= op << CPSR_CONTROL;
         }
     }
     else // MRS
     {
         int rd = instruction & RD;
         rd >>= 12;
-        if (rd == 0xFF)
+        if (rd == 0xF)
         {
             rd = PC;
         }
@@ -1263,6 +1341,9 @@ void arm_single_data_swap(struct cpu *cpu, WORD instruction)
 
     int rn = instruction & RN;
     rn >>= 16;
+    if (rn == 0xF) {
+        arm_psr_transfer(cpu, instruction);
+    }
     int rd = instruction & RD;
     rd >>= 12;
     int rm = instruction & RM;
@@ -2111,7 +2192,8 @@ WORD read_word_from_memory(struct cpu *cpu, WORD address)
         if (cpu->registers[CPSR] & E_MASK)
         {
             word <<= 8;
-            word |= cpu->memory[address - i + sizeof(word) - 1];
+            WORD ca = address - i + sizeof(word) - 1;
+            word |= cpu->memory[ca];
         }
         else
         {

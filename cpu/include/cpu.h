@@ -5,7 +5,9 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <math.h>
-
+#ifndef __USE_MISC
+# define __USE_MISC
+#endif
 #include "data_sizes.h"
 #include "instructions.h"
 #include "syscall.h"
@@ -73,6 +75,10 @@ enum cpsr_bit_positions
     C_POS = 29,
     Z_POS = 30,
     N_POS = 31,
+    CPSR_CONTROL = 0,
+    CPSR_EXTENTION = 8,
+    CPSR_STATUS = 16,
+    CPSR_FLAGS = 24,
 };
 
 enum cpu_mode
@@ -124,6 +130,8 @@ enum cpu_registers
     SP,
     LR,
     CPSR,
+    SP_SYS,
+    SPSR_SYS,
     R8_FIQ,
     R9_FIQ,
     R10_FIQ,
@@ -154,6 +162,7 @@ struct cpu
     struct request_channel *request_channels;
     int request_channel_count;
     int request_channel_capacity;
+    bool isOn;
 };
 
 enum arc_tab_taylor_series

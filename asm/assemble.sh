@@ -14,4 +14,5 @@ else
     echo "assembling"
     arm-linux-gnueabi-as ${build_args} ${compile_args} ${BASEDIR}/$1.s -o ${BASEDIR}/$1.o
     arm-linux-gnueabi-gcc-14 ${build_args} ${link_args} ${BASEDIR}/$1.o -o ${BASEDIR}/$1.elf -nostdlib
+    cp ${BASEDIR}/$1.elf ${BASEDIR}/../build/src/$1.elf
 fi

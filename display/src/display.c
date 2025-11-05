@@ -33,8 +33,13 @@ void update_display(struct display *display, int current_tick)
 
 void set_pixel(struct display *display, int x, int y, int32_t color)
 {
-    SDL_SetRenderDrawColor(display->renderer, (color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF, (color >> 24) & 0xFF);
+    uint8_t r,g,b;
+    r = color & 0b11111;
+    g = color & 0b11111 << 5;
+    b = color & 0b11111 << 10;
+    SDL_SetRenderDrawColor(display->renderer, r, g, b, 0xFF);
     SDL_RenderDrawPoint(display->renderer, x, y);
+    update_display(display, SDL_GetTicks());
 }
 
 void get_pixel(struct display *display, int x, int y, int32_t *color)

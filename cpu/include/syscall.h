@@ -63,5 +63,3 @@ enum arm_syscall_number
     OPEN,
     CLOSE,
 };
-
-void gba_div(struct cpu *cpu);

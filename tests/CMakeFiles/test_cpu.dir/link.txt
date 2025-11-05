@@ -1,0 +1,1 @@
+/usr/bin/cc -g CMakeFiles/test_cpu.dir/check_cpu.c.o -o test_cpu  ../cpu/src/libLibCpu.a /usr/lib/x86_64-linux-gnu/libcheck.a -lm -lpthread -lsubunit -lm 
