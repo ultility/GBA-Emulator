@@ -18,7 +18,8 @@ int main(int argc, char *argv[])
     struct request_channel channel;
     channel.id = 258;
     channel.memory_address = VIRTUAL_PALLETTE_RAM;
-    channel.memory_range = 0x06017FFF - 0x06000000;
+    channel.memory_range = 640 * 480;
+    //channel.memory_range = 0x06017FFF - 0x06000000;
     void func(struct request_data * data)
     { // error can be ignored this syntax is for the gcc nested function declaration, will compile
         if (data->request_type == input)
@@ -45,7 +46,7 @@ int main(int argc, char *argv[])
         {
             if (event.type == SDL_QUIT)
             {
-                run = false;
+                cpu.isOn = false;
             }
             if (event.type == SDL_WINDOWEVENT)
             {
@@ -59,7 +60,7 @@ int main(int argc, char *argv[])
                     SDL_HideWindow(SDL_GetWindowFromID(event.window.windowID));
                     if (event.window.windowID == SDL_GetWindowID(emulator.window))
                     {
-                        run = false;
+                        cpu.isOn = false;
                         break;
                     }
                 }
@@ -80,11 +81,11 @@ const char* open_rom()
     #ifdef __linux__
     const char zenityP[] = "/usr/bin/zenity";
     char Call[2048];
-
+    
     sprintf(Call, "%s  --file-selection --modal --title=\"%s\" ", zenityP, "Select file");
-
+    
     FILE *f = popen(Call, "r");
-
+    
     fgets(buffer, PATH_MAX-1, f);
     
     int ret = pclose(f);
@@ -111,8 +112,8 @@ const char* open_rom()
     ofn.nMaxFile        = MAX_PATH;
     ofn.lpstrTitle      = "Please Select A File To Open";
     ofn.Flags           = OFN_NONETWORKBUTTON |
-                          OFN_FILEMUSTEXIST |
-                          OFN_HIDEREADONLY;
+    OFN_FILEMUSTEXIST |
+    OFN_HIDEREADONLY;
     if (!GetOpenFileName(&ofn))
     {
         return "\0";
@@ -190,10 +191,35 @@ void load_bios(struct cpu* cpu)
             }
             GElf_Phdr phdr;
             cpu->registers[PC] = ehdr.e_entry - shdr.sh_addr;
-            break;
         }
+        if (shdr.sh_type == SHT_SYMTAB || shdr.sh_type == SHT_DYNSYM) {
+            Elf_Data *data = elf_getdata(scn, NULL);
+            if (data != NULL) {
+                size_t num_symbols = shdr.sh_size / shdr.sh_entsize;
+                for (size_t i = 0; i < num_symbols; ++i) {
+                    GElf_Sym sym; // Use GElf_Sym for portability
+                    if (gelf_getsym(data, i, &sym) != &sym) {
+                        fprintf(stderr, "gelf_getsym() failed: %s\n", elf_errmsg(-1));
+                        continue;
+                    }
+                    // Access symbol name from the string table
+                    char *name = elf_strptr(e, shdr.sh_link, sym.st_name);
+                    if (name == NULL) {
+                        name = "(unknown)";
+                    }
+                    if (name[0] == '_' && name[strlen(name) - 1] != '_') {
+                        printf("Symbol %zu: Name: %s, Value: 0x%lx, Size: %lu\n",
+                            i, name, (unsigned long)sym.st_value, (unsigned long)sym.st_size);
+                    }
+                    if (strcmp(name, "_start") == 0) {
+                        break;
+                    }
+                    }
+                    
+                }
+            }
+        }
+        elf_end(e);
+        close(fd);
+        fclose(f);
     }
-    elf_end(e);
-    close(fd);
-    fclose(f);
-}

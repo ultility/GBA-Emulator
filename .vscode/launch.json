@@ -28,6 +28,21 @@
                     "description": "Set Disassembly Flavor to Intel",
                     "text": "-gdb-set disassembly-flavor intel",
                     "ignoreFailures": true
+                },
+                /*{
+                    "description": "Set Output to hex",
+                    "text": "set output-radix 16",
+                    "ignoreFailures": true
+                },*/
+                {
+                    "description": "Set print elements to unlimited",
+                    "text": "set print elements 0",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Set print array to on",
+                    "text": "set print array on",
+                    "ignoreFailures": false
                 }
             ]
         },

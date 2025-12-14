@@ -35,11 +35,15 @@ void set_pixel(struct display *display, int x, int y, int32_t color)
 {
     uint8_t r,g,b;
     r = color & 0b11111;
-    g = color & 0b11111 << 5;
-    b = color & 0b11111 << 10;
+    g = (color & 0b11111 << 5) >> 5;
+    b = (color & 0b11111 << 10) >> 10;
+    float lerp = 0xFF / 0b11111;
+    r = (int)(r * lerp);
+    g = (int)(g * lerp);
+    b = (int)(b * lerp);
     SDL_SetRenderDrawColor(display->renderer, r, g, b, 0xFF);
     SDL_RenderDrawPoint(display->renderer, x, y);
-    update_display(display, SDL_GetTicks());
+    //update_display(display, SDL_GetTicks());
 }
 
 void get_pixel(struct display *display, int x, int y, int32_t *color)

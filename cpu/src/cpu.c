@@ -10,6 +10,12 @@ void cpu_init(struct cpu *cpu)
     cpu->request_channel_capacity = 0;
     cpu->request_channel_count = 0;
     cpu->registers[CPSR] |= E_MASK;
+    cpu->registers[SPSR_ABT] |= E_MASK;
+    cpu->registers[SPSR_FIQ] |= E_MASK;
+    cpu->registers[SPSR_IRQ] |= E_MASK;
+    cpu->registers[SPSR_SVC] |= E_MASK;
+    cpu->registers[SPSR_SYS] |= E_MASK;
+    cpu->registers[SPSR_UND] |= E_MASK;
     cpu->isOn = true;
 }
 
@@ -34,6 +40,9 @@ void cpu_loop(struct cpu *cpu)
         if (check_condition(cpu, instruction))
         {
             cpu_execute_arm_instruction(cpu, instruction);
+        }
+        else {
+            cpu->registers[PC] += sizeof(WORD) / sizeof(BYTE);
         }
     }
 }
@@ -190,10 +199,10 @@ void cpu_execute_arm_instruction(struct cpu *cpu, WORD instruction)
         break;
     case SOFTWARE_INTERRUPT:
         arm_software_interrupt(cpu, instruction);
-        cpu->registers[PC] += sizeof(WORD) / sizeof(BYTE);
         break;
     case UNDEFINED:
-        cpu->registers[PC] += sizeof(WORD) / sizeof(BYTE);
+        cpu->registers[PC] = UNDEFINED_INSTRUCTION_VECTOR;
+        //cpu->registers[PC] += sizeof(WORD) / sizeof(BYTE);
         break;
     case DATA_PROCESSING:
         arm_data_processing(cpu, instruction);
@@ -247,24 +256,10 @@ void arm_single_data_transfer(struct cpu *cpu, WORD instruction)
         Rm = 0b1111 << 0,
     };
     uint32_t sd_reg = (instruction & Rd) >> 12;
-    if (sd_reg == 0xF)
-    {
-        sd_reg = PC;
-    }
-    else
-    {
-        sd_reg++;
-    }
+    sd_reg = update_register(sd_reg, cpu);
 
     uint8_t address_reg = (instruction & Rn) >> 16;
-    if (address_reg == 0xF)
-    {
-        address_reg = PC;
-    }
-    else
-    {
-        address_reg++;
-    }
+    address_reg = update_register(address_reg, cpu);
     int32_t address_offset = 0;
     uint32_t value = 0;
     uint32_t address = cpu->registers[address_reg];
@@ -288,13 +283,16 @@ void arm_single_data_transfer(struct cpu *cpu, WORD instruction)
     {
         address_offset = -address_offset;
     }
-    if ((instruction & P) == 1)
+    if ((instruction & P) == P)
     {
         address += address_offset;
         if ((instruction & W) == W)
         {
             cpu->registers[address_reg] = address;
         }
+    }
+    if (address >= VIRTUAL_WRAM_CHIP_START && address <= VIRTUAL_IO_REGISTERS) {
+        address = STACK_START;
     }
     if ((instruction & L) == L)
     {
@@ -489,54 +487,21 @@ void arm_data_processing(struct cpu *cpu, WORD instruction)
         ISI = 0b1111 << 8,
         nn = 0xFF,
     };
-    uint32_t updated_cpsr = cpu->registers[CPSR];
-    int opcode = instruction & OPCODE;
+    uint32_t updated_cpsr = cpu->registers[update_register(CPSR, cpu)];
+    int opcode = (instruction & OPCODE) >> 21;
     bool s = (instruction & S) == S;
     int32_t rn = (instruction & Rn) >> 16;
     int32_t rd = (instruction & Rd) >> 12;
+    int32_t rm = instruction & Rm;
+    rn = update_register(rn, cpu);
+    rd = update_register(rd, cpu);
+    rm = update_register(rm, cpu);
     int op2 = 0;
-    if (opcode >> 21 >= 0x8 && opcode >> 21 <= 0xB && !s) { // if TEQ, TST, CMP, CMN and S bit is 0 move to PSR
+    if (opcode >= 0x8 && opcode <= 0xB && !s) { // if TEQ, TST, CMP, CMN and S bit is 0 move to PSR
         arm_psr_transfer(cpu, instruction);
         return;
     }
-    if (rd == 0xF)
-    {
-        rd = PC;
-    }
-    else
-    {
-        rd++;
-    }
-    if (rn == 0xF)
-    {
-        rn = PC;
-    }
-    else
-    {
-        rn++;
-    }
-    switch (cpu->registers[CPSR] & MODE_MASK) {
-        case USER: // uses regular registers
-            break;
-        case SYS: // uses SPSR_SYS and SP_SYS
-            updated_cpsr = cpu->registers[SPSR_SYS];
-            break;
-        case UND:
-            updated_cpsr = cpu->registers[SPSR_UND];
-            break;
-        case SVC:
-            updated_cpsr = cpu->registers[SPSR_SVC];
-            break;
-        case IRQ:
-            updated_cpsr = cpu->registers[SPSR_IRQ];
-            break;
-        case FIQ:
-            updated_cpsr = cpu->registers[SPSR_FIQ];
-            break;
-        case ABT:
-
-            break;
-    }
+    
     int op1 = cpu->registers[rn];
     if ((instruction & I) == I)
     {
@@ -547,15 +512,6 @@ void arm_data_processing(struct cpu *cpu, WORD instruction)
     }
     else
     {
-        int rm = instruction & Rm;
-        if (rm == 0xF)
-        {
-            rm = 0;
-        }
-        else
-        {
-            rm++;
-        }
         op2 = cpu->registers[rm];
         int shift_amount = 0;
         if (instruction & R)
@@ -582,7 +538,7 @@ void arm_data_processing(struct cpu *cpu, WORD instruction)
         shift_amount &= 0xFF;
         op2 = shift_immediate(cpu, shift_type, shift_amount, op2);
     }
-    switch (opcode >> 21)
+    switch (opcode)
     {
     case 0x0: // AND
         cpu->registers[rd] = op1 & op2;
@@ -689,7 +645,10 @@ void arm_data_processing(struct cpu *cpu, WORD instruction)
             updated_cpsr |= Z_MASK;
             updated_cpsr &= ~N_MASK;
         }
-        cpu->registers[CPSR] = updated_cpsr;
+        else {
+            updated_cpsr &= ~(N_MASK | Z_MASK);
+        }
+        cpu->registers[update_register(CPSR, cpu)] = updated_cpsr;
     }
 }
 
@@ -796,67 +755,11 @@ bool test_overflow(int32_t op1, int32_t op2)
 
 void arm_software_interrupt(struct cpu *cpu, WORD instruction)
 {
-    enum gba_syscall_number syscall = cpu->registers[R7];
-    switch (syscall)
-    {
-        case EXIT:
-            cpu->isOn = false;
-            break;
-        case DIV_ARM: // swi 7
-            cpu->registers[R0] = cpu->registers[R0] * cpu->registers[R1];
-            cpu->registers[R1] = cpu->registers[R0] / cpu->registers[R1];
-            cpu->registers[R0] = cpu->registers[R0] / cpu->registers[R1];
-        case DIV: // swi 6
-            int result = cpu->registers[R0] / cpu->registers[R1];
-            cpu->registers[R3] = cpu->registers[R0] - (cpu->registers[R1] * result);
-            cpu->registers[R0] = result;
-            cpu->registers[R0] = result & INT32_MAX;
-            break;
-        case SQRT: // swi 8
-            int correction = 0;
-            while(!(cpu->registers[R0] & (0b11 << 30)))
-            {
-                cpu->registers[R0] <<= 2;
-                correction++;
-            }
-            cpu->registers[R0] = (uint32_t)(cpu->registers[R0]);
-            cpu->registers[R0] >>= correction;
-            break;
-        case ARCTAN: // swi 9
-            cpu->registers[R0] = (uint32_t)(atan((int32_t)cpu->registers[R0] & UINT16_MAX));
-            break;
-        case ARCTAN2: // swi 10
-            int x = cpu->registers[R0];
-            int y = cpu->registers[R1];
-            if (x >= 0)
-            {
-                cpu->registers[R0] = (uint32_t)(atan(y/x));
-            }
-            else
-            {
-                cpu->registers[R0] = (uint32_t)(M_PI - atan(abs(y/x)));
-                if (y < 0)
-                {
-                    cpu->registers[R0] *= -1;
-                }
-            }
-            break;
-        case BG_AFFINE_SET:
-            int offset = 0;
-            int32_t og_x = read_word_from_memory(cpu, cpu->registers[R0]);
-            offset += sizeof(og_x);
-            int32_t og_y = read_word_from_memory(cpu, cpu->registers[R0] + offset);
-            offset += sizeof(og_y);
-            int16_t camera_x = read_half_word_from_memory(cpu, cpu->registers[R0] + offset);
-            offset += sizeof(camera_x);
-            int16_t camera_y = read_half_word_from_memory(cpu, cpu->registers[R0] + offset);
-            offset += sizeof(camera_y);
-            int16_t scale_x = read_half_word_from_memory(cpu, cpu->registers[R0] + offset);
-            offset += sizeof(scale_x);
-            int16_t scale_y = read_half_word_from_memory(cpu, cpu->registers[R0] + offset);
-            offset += sizeof(scale_y);
-            uint16_t rotation = read_half_word_from_memory(cpu, cpu->registers[R0] + offset);
-    }
+    cpu->registers[SPSR_SVC] = cpu->registers[CPSR];
+    cpu->registers[LR_SVC] = cpu->registers[PC] + sizeof(WORD) / sizeof(BYTE);
+    cpu->registers[CPSR] &= ~(MODE_MASK | T_MASK);
+    cpu->registers[CPSR] |= SVC;
+    cpu->registers[PC] = SOFTWARE_INTERRUPT_VECTOR;
 }
 
 void arm_multiply(struct cpu *cpu, WORD instruction)
@@ -880,38 +783,10 @@ void arm_multiply(struct cpu *cpu, WORD instruction)
     int rn = (instruction & RN) >> 12;
     int rs = (instruction & RS) >> 8;
     int rm = (instruction & RM);
-    if (rd == 0xF)
-    {
-        rd = PC;
-    }
-    else
-    {
-        rd++;
-    }
-    if (rn == 0xF)
-    {
-        rn = PC;
-    }
-    else
-    {
-        rn++;
-    }
-    if (rm == 0xF)
-    {
-        rm = PC;
-    }
-    else
-    {
-        rm++;
-    }
-    if (rs == 0xF)
-    {
-        rs = PC;
-    }
-    else
-    {
-        rs++;
-    }
+    rd = update_register(rd, cpu);
+    rn = update_register(rn, cpu);
+    rm = update_register(rm, cpu);
+    rs = update_register(rs, cpu);
     int64_t op1 = cpu->registers[rm];
     int64_t op2 = cpu->registers[rs];
     int64_t rd_hi_low = cpu->registers[rd];
@@ -1036,27 +911,7 @@ void arm_psr_transfer(struct cpu *cpu, WORD instruction)
     uint32_t dst = CPSR;
     if (instruction & PSR)
     {
-        switch (cpu->registers[CPSR] & MODE_MASK)
-        {
-        case USER:
-        case SYS:
-            break;
-        case SVC:
-            dst = SPSR_SVC;
-            break;
-        case ABT:
-            dst = SPSR_ABT;
-            break;
-        case UND:
-            dst = SPSR_UND;
-            break;
-        case FIQ:
-            dst = SPSR_FIQ;
-            break;
-        case IRQ:
-            dst = SPSR_IRQ;
-            break;
-        }
+        dst = update_register(dst, cpu);
     }
     if (instruction & OPCODE) // MSR
     {
@@ -1070,14 +925,7 @@ void arm_psr_transfer(struct cpu *cpu, WORD instruction)
         else
         {
             int rm = instruction & RM;
-            if (rm == 0xFF)
-            {
-                op = cpu->registers[PC];
-            }
-            else
-            {
-                op = cpu->registers[rm + 1];
-            }
+            rm = update_register(rm, cpu);
         }
         if (instruction & F)
         {
@@ -1104,14 +952,7 @@ void arm_psr_transfer(struct cpu *cpu, WORD instruction)
     {
         int rd = instruction & RD;
         rd >>= 12;
-        if (rd == 0xF)
-        {
-            rd = PC;
-        }
-        else
-        {
-            rd++;
-        }
+        rd = update_register(rd, cpu);
         cpu->registers[rd] = cpu->registers[dst];
     }
 }
@@ -1140,22 +981,8 @@ void arm_hds_data_transfer(struct cpu *cpu, WORD instruction)
     rn >>= 16;
     rd >>= 12;
     int base = 0;
-    if (rn == 0xFF)
-    {
-        rn = PC;
-    }
-    else
-    {
-        rn++;
-    }
-    if (rd == 0xFF)
-    {
-        rd = PC;
-    }
-    else
-    {
-        rd++;
-    }
+    rn = update_register(rn, cpu);
+    rd = update_register(rd, cpu);
     base = cpu->registers[rn];
     int offset = 0;
     if (instruction & I)
@@ -1166,14 +993,7 @@ void arm_hds_data_transfer(struct cpu *cpu, WORD instruction)
     else
     {
         int rm = instruction & RM;
-        if (rm == 0xFF)
-        {
-            rm = PC;
-        }
-        else
-        {
-            rm++;
-        }
+        rm = update_register(rm, cpu);
         offset = cpu->registers[rm];
     }
     if ((instruction & U) != U)
@@ -1305,9 +1125,9 @@ void arm_block_data_transfer(struct cpu *cpu, WORD instruction)
     else
     {
         // STM
-        for (int i = 1; rlist > 0; i++)
+        for (int i = rlist; i > 0; i >>= 1)
         {
-            if (rlist & 0b1)
+            if (i & 0b1)
             {
                 write_word_to_memory(cpu, base + (count * sizeof(WORD)), cpu->registers[i]);
                 count++;
@@ -2149,44 +1969,48 @@ void thumb_move_shifted_register(struct cpu *cpu, HALF_WORD instruction)
 bool check_condition(struct cpu *cpu, WORD instruction)
 {
     int cond = (instruction >> 28) & 0xF;
+    int32_t updated_cpsr = cpu->registers[update_register(CPSR, cpu)];
     switch (cond)
     {
     case 0x0: // EQ
-        return cpu->registers[CPSR] & Z_MASK;
+        return updated_cpsr & Z_MASK;
     case 0x1: // NE
-        return !(cpu->registers[CPSR] & Z_MASK);
+        return !(updated_cpsr & Z_MASK);
     case 0x2: // CS
-        return cpu->registers[CPSR] & C_MASK;
+        return updated_cpsr & C_MASK;
     case 0x3: // CC
-        return !(cpu->registers[CPSR] & C_MASK);
+        return !(updated_cpsr & C_MASK);
     case 0x4: // MI
-        return (cpu->registers[CPSR] & N_MASK);
+        return (updated_cpsr & N_MASK);
     case 0x5: // PL
-        return !(cpu->registers[CPSR] & N_MASK);
+        return !(updated_cpsr & N_MASK);
     case 0x6: // VS
-        return (cpu->registers[CPSR] & V_MASK);
+        return (updated_cpsr & V_MASK);
     case 0x7: // VC
-        return !(cpu->registers[CPSR] & V_MASK);
+        return !(updated_cpsr & V_MASK);
     case 0x8: // HI
-        return (cpu->registers[CPSR] & C_MASK) && !(cpu->registers[CPSR] & Z_MASK);
+        return (updated_cpsr & C_MASK) && !(cpu->registers[CPSR] & Z_MASK);
     case 0x9: // LS
-        return !(cpu->registers[CPSR] & C_MASK) || (cpu->registers[CPSR] & Z_MASK);
+        return !(updated_cpsr & C_MASK) || (cpu->registers[CPSR] & Z_MASK);
     case 0xa: // GE
-        return ((cpu->registers[CPSR] & N_MASK) >> N_POS) == ((cpu->registers[CPSR] & V_MASK) >> V_POS);
+        return ((updated_cpsr & N_MASK) >> N_POS) == ((cpu->registers[CPSR] & V_MASK) >> V_POS);
     case 0xb: // LT
-        return ((cpu->registers[CPSR] & N_MASK) >> N_POS) != ((cpu->registers[CPSR] & V_MASK) >> V_POS);
+        return ((updated_cpsr & N_MASK) >> N_POS) != ((cpu->registers[CPSR] & V_MASK) >> V_POS);
     case 0xc: // GT
-        return ((cpu->registers[CPSR] & Z_MASK) == 0) && ((cpu->registers[CPSR] & N_MASK) >> N_POS) == ((cpu->registers[CPSR] & V_MASK) >> V_POS);
+        return ((updated_cpsr & Z_MASK) == 0) && ((cpu->registers[CPSR] & N_MASK) >> N_POS) == ((cpu->registers[CPSR] & V_MASK) >> V_POS);
     case 0xd: // LE
-        return ((cpu->registers[CPSR] & Z_MASK) != 0) || ((cpu->registers[CPSR] & N_MASK) >> N_POS) != ((cpu->registers[CPSR] & V_MASK) >> V_POS);
+        return ((updated_cpsr & Z_MASK) != 0) || ((cpu->registers[CPSR] & N_MASK) >> N_POS) != ((cpu->registers[CPSR] & V_MASK) >> V_POS);
     case 0xe: // AL
         return true;
     }
 }
 
 WORD read_word_from_memory(struct cpu *cpu, WORD address)
-{
+{   
     WORD word = 0;
+    if (address >= VIRTUAL_WRAM_CHIP_START && address <= VIRTUAL_IO_REGISTERS) {
+        address = STACK_START;
+    }
     for (int i = 0; i < sizeof(word); i++)
     {
         if (cpu->registers[CPSR] & E_MASK)
@@ -2251,4 +2075,102 @@ void write_half_word_to_memory(struct cpu *cpu, WORD address, HALF_WORD value)
             cpu->memory[address + i] = (value >> ((sizeof(value) - 1 - i) * 8)) & 0xFF;
         }
     }
+}
+
+int update_register(int r1, struct cpu *cpu) {
+    switch (cpu->registers[CPSR] & MODE_MASK) {
+        case USER: // uses regular registers
+            break;
+        case SYS: // uses SPSR_SYS and SP_SYS
+            switch(r1) {
+                case SP:
+                    r1 = SP_SYS;
+                    break;
+                case CPSR:
+                    r1 = SPSR_SYS;
+                    break;
+            }
+            break;
+        case UND: // uses SPSR_UND and SP_UND, LR_UND
+            switch(r1) {
+                case SP:
+                    r1 = SP_UND;
+                    break;
+                case LR:
+                    r1 = LR_UND;
+                    break;
+                case CPSR:
+                    r1 = SPSR_UND;
+                    break;
+            }
+            break;
+        case SVC: // uses SPSR_SVC and SP_SVC, LR_SVC
+            switch(r1) {
+                case SP:
+                    r1 = SP_SVC;
+                    break;
+                case LR:
+                    r1 = LR_SVC;
+                    break;
+                case CPSR:
+                    r1 = SPSR_SVC;
+                    break;
+            }
+            break;
+        case IRQ: // uses SPSR_IRQ and SP_IRQ, LR_IRQ
+            switch(r1) {
+                case SP:
+                    r1 = SP_IRQ;
+                    break;
+                case LR:
+                    r1 = LR_IRQ;
+                    break;
+                case CPSR:
+                    r1 = SPSR_IRQ;
+                    break;
+            }
+            break;
+        case FIQ: // uses SPSR_FIQ and R8-R12_FIQ, SP_FIQ, LR_FIQ
+            switch(r1) {
+                case R8:
+                    r1 = R8_FIQ;
+                    break;
+                case R9:
+                    r1 = R9_FIQ;
+                    break;
+                case R10:
+                    r1 = R10_FIQ;
+                    break;
+                case R11:
+                    r1 = R11_FIQ;
+                    break;
+                case R12:
+                    r1 = R12_FIQ;
+                    break;
+                case SP:
+                    r1 = SP_FIQ;
+                    break;
+                case LR:
+                    r1 = LR_FIQ;
+                    break;
+                case CPSR:
+                    r1 = SPSR_FIQ;
+                    break;
+            }
+            break;
+        case ABT: // uses SPSR_ABT and SP_ABT, LR_ABT
+            switch(r1) {
+                case SP:
+                    r1 = SP_ABT;
+                    break;
+                case LR:
+                    r1 = LR_ABT;
+                    break;
+                case CPSR:
+                    r1 = SPSR_ABT;
+                    break;
+            }
+            break;
+    }
+    return r1;
 }

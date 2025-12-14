@@ -20,7 +20,7 @@ enum memory_sections_size
 {
     BIOS_SIZE = 16 * KB,
     STACK_SIZE = 1 * KB,
-    MEMORY_SIZE = STACK_SIZE + STACK_SIZE
+    MEMORY_SIZE = STACK_SIZE + STACK_SIZE + BIOS_SIZE
 };
 
 enum memory_sections
@@ -113,7 +113,6 @@ enum cpsr_masks
 
 enum cpu_registers
 {
-    PC,
     R0,
     R1,
     R2,
@@ -129,6 +128,7 @@ enum cpu_registers
     R12,
     SP,
     LR,
+    PC,
     CPSR,
     SP_SYS,
     SPSR_SYS,
@@ -175,6 +175,17 @@ enum arc_tab_taylor_series
     Order_11 = 0x091C,
     Order_13 = 0x0390,
     Order_15 = 0x00A9,
+};
+
+enum exception_vector_table{
+    RESET_VECTOR = 0x00,
+    UNDEFINED_INSTRUCTION_VECTOR = 0x04,
+    SOFTWARE_INTERRUPT_VECTOR = 0x08,
+    PREFATCH_ABORT_VECTOR = 0x0C,
+    DATA_ABORT_VECTOR = 0x10,
+    ADDRESS_EXCEEDS_26_BIT_VECTOR = 0x14,
+    NORMAL_INTERRUPT_VECTOR = 0x18,
+    FAST_INTERRUT_VECTOR = 0x1C,
 };
 
 void cpu_init(struct cpu *cpu);
@@ -276,3 +287,5 @@ HALF_WORD read_half_word_from_memory(struct cpu *cpu, WORD address);
 void write_word_to_memory(struct cpu *cpu, WORD address, WORD value);
 
 void write_half_word_to_memory(struct cpu *cpu, WORD address, HALF_WORD value);
+
+int update_register(int r1, struct cpu *cpu);
